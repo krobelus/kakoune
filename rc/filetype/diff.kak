@@ -92,6 +92,51 @@ define-command diff-jump -params .. -docstring %{
 }
 complete-command diff-jump file
 
+define-command diff -docstring %{
+    diff <old-file> [<new-file> [<bufname>]]: compare two files in a scratch buffer
+
+    The current buffer's file be used if no new file is given.
+    The scratch buffer will be called '*diff*' if not specified.
+} -params 1.. %{
+    evaluate-commands %sh{
+        printf %s\\n "edit -scratch ${3:-'*diff*'}"
+        printf %s\\n "set-option buffer filetype diff"
+        shellquote() {
+            printf "'%s'" "$(printf %s "$1" | sed "s/'/'\\''/g")"
+        }
+        printf "execute-keys %%{%%d!diff -u %s %s<ret>gk}\\n" \
+                "$(shellquote "$1")" "$(shellquote "${2:-"${kak_buffile}"}")"
+    }
+}
+complete-command diff file
+
+define-command diff-jump-reverse -params 2 %{
+    evaluate-commands -save-regs lc %{
+        evaluate-commands -draft %{
+            set-register l %val{cursor_line}
+            set-register c %val{cursor_column}
+            buffer %arg{1}
+            execute-keys <percent>
+            diff-parse BEGIN %exp{
+                $in_reverse_version = "%arg{2}";
+                if ($in_reverse_version eq "+") {
+                    $version = "-";
+                } else {
+                    $version = "+";
+                }
+                $in_reverse_line = %reg{l};
+                $in_reverse_column = %reg{c};
+            } END %exp{
+                print "set-register l $diff_line\n";
+            }
+        }
+        evaluate-commands -try-client %opt{jumpclient} %{
+            buffer %arg{1}
+            execute-keys %exp{%reg{l}g}
+        }
+    }
+}
+
 define-command -hidden diff-jump-both -params 2 %{
     evaluate-commands -draft -save-regs con %{
         # Save the column because we will move the cursor.

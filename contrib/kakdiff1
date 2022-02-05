@@ -1,0 +1,34 @@
+#!/bin/sh
+
+old=$1
+new=$2
+shift 2
+
+exec kak "$old" "$new" -e "
+    require-module diff
+    define-command -hidden diff-update -params 2 %{
+        # Update diff buffer.
+        evaluate-commands -draft %{
+            diff '$old' '$new' *diff*
+        }
+        # Update line flags.
+        diff-show *diff* '$old' '$new'
+        # Restore position in diff buffer.
+        evaluate-commands -save-regs t %{
+            set-register t %val{bufname}
+            buffer %arg{1}
+            diff-jump-reverse *diff* %arg{2}
+            buffer %reg{t}
+        }
+    }
+    diff-update '$old' -
+    add-highlighter 'buffer=$old/diff' flag-lines Default diff_flags
+    add-highlighter 'buffer=$new/diff' flag-lines Default diff_flags
+    hook 'buffer=$old' BufWritePost .* %{ diff-update '$old' - }
+    hook 'buffer=$new' BufWritePost .* %{ diff-update '$new' + }
+    map 'buffer=$old' normal <ret> %{:diff-jump-reverse *diff* -<ret>}
+    map 'buffer=$new' normal <ret> %{:diff-jump-reverse *diff* +<ret>}
+    buffer *diff*
+    map buffer=*diff* normal <ret> %{:diff-jump<ret>}
+    map buffer=*diff* normal <c-ret> %{:diff-jump -<ret>}
+" "$@"
