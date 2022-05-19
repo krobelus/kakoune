@@ -101,10 +101,10 @@ kak$(suffix) : $(objects) .version.o
 -include $(deps)
 
 .%$(suffix).o: %.cc
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MD -MP -MF $(addprefix ., $(<:.cc=$(suffix).d)) -c -o $@ $<
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MD -MP -MF $(addprefix ., $(<:.cc=$(suffix).d)) -c -o $@ $(compdb_args) $<
 
 .version.o: .version.cc
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $(compdb_args) $<
 
 .version.cc: FORCE
 	@printf "%s" 'namespace Kakoune { const char* version = "$(version)"; }' > .version.cc.tmp
@@ -128,7 +128,7 @@ tags:
 	ctags -R
 
 clean:
-	rm -f $(objects) $(deps)
+	rm -f $(objects) $(deps) .version.cc .version.o $(compile_commands) compile_commands.json
 
 dist:
 	@if ! [ -d ../.git ]; then echo "make dist can only run from a git repo";  false; fi
@@ -186,6 +186,34 @@ uninstall:
 		$(docdir) \
 		$(mandir)/kak.1.gz \
 		$(mandir)/kak.1
+
+
+GENERATE_COMPILATION_DATABASE ?= no
+ifeq ($(GENERATE_COMPILATION_DATABASE),yes)
+    compdb_check = $(shell $(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -MJ /dev/null \
+         -x c++ /dev/null -o /dev/null 2>&1; echo $$?)
+    ifneq ($(compdb_check),0)
+        override GENERATE_COMPILATION_DATABASE = no
+        $(warning GENERATE_COMPILATION_DATABASE is set to "yes", but your \
+                compiler does not support generating compilation database entries)
+    endif
+else
+    ifneq ($(GENERATE_COMPILATION_DATABASE),no)
+        $(error please set GENERATE_COMPILATION_DATABASE to "yes" or "no" \
+            (not "$(GENERATE_COMPILATION_DATABASE)"))
+    endif
+endif
+ifeq ($(GENERATE_COMPILATION_DATABASE),yes)
+    compile_commands := $(addprefix ., $(sources:.cc=$(suffix).json)) .version.json
+    compdb_args = -MJ $(@:.o=.json)
+    all : compile_commands.json
+    compile_commands.json: $(objects) .version.o
+	@sed -e '1s/^/[/' -e '$$s/,$$/]/' $(compile_commands) > $@.tmp
+	@if test -s $@.tmp; then mv $@.tmp $@; else rm $@.tmp; fi
+else
+    compile_commands =
+    compdb_args =
+endif
 
 .PHONY: check TAGS clean dist distclean installdirs install install-strip uninstall
 .PHONY: tags test man kak FORCE

@@ -8,6 +8,7 @@ src/kak.debug
 src/kak.opt
 src/.version*
 src/.*.json
+src/compile_commands.json
 doc/kak.1.gz
 doc/manpages/*.gz
 tags
