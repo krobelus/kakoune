@@ -55,6 +55,7 @@ struct Token
     Type type;
     ByteCount pos;
     String content;
+    Codepoint terminator{};
     bool terminated = false;
 };
 
