@@ -711,7 +711,9 @@ static Completions complete_expansion(const Context& context,
         c += to_string(token.terminator);
     }
 
-    return { start, cursor_pos, candidates };
+    auto completions_flags = token.type == Token::Type::RegisterExpand
+                            ? Completions::Flags::None : Completions::Flags::Menu;
+    return { start, cursor_pos, candidates, completions_flags };
 }
 
 static Completions complete_expand(const Context& context,
