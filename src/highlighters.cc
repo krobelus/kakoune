@@ -2120,8 +2120,9 @@ public:
         if (parser[0].empty() or parser[1].empty())
             throw runtime_error("begin and end must not be empty");
 
-        const RegexCompileFlags flags = match_capture ?
-            RegexCompileFlags::Optimize : RegexCompileFlags::NoSubs | RegexCompileFlags::Optimize;
+        RegexCompileFlags flags = RegexCompileFlags::Optimize | RegexCompileFlags::UsedLiterals;
+        if (not match_capture)
+            flags |= RegexCompileFlags::NoSubs;
 
         const auto& type = parser[2];
         auto& registry = HighlighterRegistry::instance();

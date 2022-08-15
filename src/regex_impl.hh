@@ -137,17 +137,21 @@ struct CompiledRegex : RefCountable, UseMemoryDomain<MemoryDomain::Regex>
 
     std::unique_ptr<StartDesc> forward_start_desc;
     std::unique_ptr<StartDesc> backward_start_desc;
+
+    using UsedLiterals = Vector<String, MemoryDomain::Regex>;
+    std::unique_ptr<UsedLiterals> used_literals;
 };
 
 String dump_regex(const CompiledRegex& program);
 
 enum class RegexCompileFlags
 {
-    None     = 0,
-    NoSubs   = 1 << 0,
-    Optimize = 1 << 1,
-    Backward = 1 << 2,
-    NoForward = 1 << 3,
+    None         = 0,
+    NoSubs       = 1 << 0,
+    Optimize     = 1 << 1,
+    Backward     = 1 << 2,
+    NoForward    = 1 << 3,
+    UsedLiterals = 1 << 4,
 };
 constexpr bool with_bit_ops(Meta::Type<RegexCompileFlags>) { return true; }
 
@@ -256,6 +260,14 @@ public:
                 if (not start_desc->map[(c < StartDesc::count) ? c : StartDesc::other])
                     return false;
             }
+        }
+
+        if (const auto& used_literals = m_program.used_literals)
+        {
+            if (none_of(*used_literals, [&](const auto& alternative) {
+                return std::search(begin, end, alternative.begin(), alternative.end()) != end;
+            }))
+                return false;
         }
 
         return exec_program(std::move(start), config);

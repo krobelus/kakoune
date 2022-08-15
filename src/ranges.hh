@@ -589,6 +589,13 @@ bool any_of(Range&& range, T op)
 }
 
 template<typename Range, typename T>
+bool none_of(Range&& range, T op)
+{
+    using std::begin; using std::end;
+    return std::none_of(begin(range), end(range), op);
+}
+
+template<typename Range, typename T>
 auto remove_if(Range&& range, T op)
 {
     using std::begin; using std::end;

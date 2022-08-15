@@ -711,6 +711,9 @@ struct RegexCompiler
         m_program.character_classes = std::move(m_parsed_regex.character_classes);
         m_program.named_captures = std::move(m_parsed_regex.named_captures);
         m_program.save_count = m_parsed_regex.capture_count * 2;
+
+        if (flags & RegexCompileFlags::UsedLiterals)
+            m_program.used_literals = compute_used_literals();
     }
 
     CompiledRegex get_compiled_regex() { return std::move(m_program); }
@@ -1019,6 +1022,124 @@ private:
             return nullptr;
 
         return std::make_unique<CompiledRegex::StartDesc>(start_desc);
+    }
+
+    struct UsedLiteralsResult {
+        CompiledRegex::UsedLiterals alternatives;
+        bool done = false;
+    };
+
+    // Mutate used_literals with informations on which Codepoints must match.
+    UsedLiteralsResult compute_used_literals(ParsedRegex::NodeIndex index, bool found_literal = false) const
+    {
+        UsedLiteralsResult res;
+        auto& node = get_node(index);
+        if (node.quantifier.allows_none())
+        {
+            res.done = true;
+            return res;
+        }
+        switch (node.op)
+        {
+            case ParsedRegex::Literal:
+                res.alternatives.push_back(to_string(node.value));
+                return res;
+            case ParsedRegex::AnyChar:
+            case ParsedRegex::AnyCharExceptNewLine:
+            case ParsedRegex::CharClass:
+            case ParsedRegex::CharType:
+                res.done = true;
+                return res;
+            case ParsedRegex::Sequence:
+            {
+                String sequence;
+                for (auto child : Children<>{m_parsed_regex, index})
+                {
+                    Optional<String> common_prefix{};
+                    auto c = compute_used_literals(child, found_literal);
+                    bool child_done = c.done;
+                    for (auto child_prefix : c.alternatives)
+                    {
+                        if (not common_prefix)
+                            common_prefix = child_prefix;
+                        else
+                        {
+                            auto it = common_prefix->begin();
+                            auto cit = child_prefix.begin();
+                            bool match = false;
+                            while (true)
+                            {
+                                bool itend = it == common_prefix->end();
+                                bool citend = cit == child_prefix.end();
+                                if (itend and citend)
+                                    match = true;
+                                if (itend or citend)
+                                    break;
+                                auto prev_it = it;
+                                if (utf8::read_codepoint(it, common_prefix->end()) !=
+                                    utf8::read_codepoint(cit, child_prefix.end()))
+                                {
+                                    it = prev_it;
+                                    break;
+                                }
+                            }
+                            common_prefix = common_prefix->substr(0_byte, (ByteCount)(it - common_prefix->begin())).str(); // TODO
+                            if (match)
+                                child_done = true;
+                        }
+                    }
+                    if (common_prefix and not common_prefix->empty())
+                    {
+                        sequence += *common_prefix;
+                        found_literal = true;
+                    }
+                    if (found_literal and child_done)
+                    {
+                        res.done = true;
+                        break;
+                    }
+                }
+                res.alternatives.push_back(std::move(sequence));
+                return res;
+            }
+            case ParsedRegex::Alternation:
+            {
+                res.alternatives.reserve(res.alternatives.size() + node.children_end - index);
+                for (auto child : Children<>{m_parsed_regex, index})
+                {
+                    auto c = compute_used_literals(child, found_literal);
+                    for (auto suffix : c.alternatives)
+                        res.alternatives.push_back(suffix);
+                    if (c.done)
+                        res.done = true;
+                }
+                return res;
+            }
+            case ParsedRegex::LineStart:
+            case ParsedRegex::LineEnd:
+            case ParsedRegex::WordBoundary:
+            case ParsedRegex::NotWordBoundary:
+            case ParsedRegex::SubjectBegin:
+            case ParsedRegex::SubjectEnd:
+            case ParsedRegex::ResetStart:
+            case ParsedRegex::LookAhead:
+            case ParsedRegex::LookBehind:
+            case ParsedRegex::NegativeLookAhead:
+            case ParsedRegex::NegativeLookBehind:
+                return res;
+        }
+        kak_assert(false);
+        return res;
+    }
+
+    [[gnu::noinline]]
+    std::unique_ptr<CompiledRegex::UsedLiterals> compute_used_literals() const
+    {
+        // return nullptr;
+        auto alternatives = compute_used_literals(0).alternatives;
+        if (alternatives.empty() or (alternatives.size() == 1 and alternatives.at(0).empty()) )
+            return nullptr;
+        return std::make_unique<CompiledRegex::UsedLiterals>(alternatives);
     }
 
     void optimize(size_t begin, size_t end)
