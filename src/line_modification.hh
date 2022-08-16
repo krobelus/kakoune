@@ -26,9 +26,11 @@ Vector<LineModification> compute_line_modifications(const Buffer& buffer, size_t
 
 using LineRange = Range<LineCount>;
 
-struct LineRangeSet : private Vector<LineRange, MemoryDomain::Highlight>
+using LineRangeList = Vector<LineRange, MemoryDomain::Highlight>;
+
+struct LineRangeSet : private LineRangeList
 {
-    using Base = Vector<LineRange, MemoryDomain::Highlight>;
+    using Base = LineRangeList;
     using Base::operator[];
     using Base::begin;
     using Base::end;
@@ -38,7 +40,7 @@ struct LineRangeSet : private Vector<LineRange, MemoryDomain::Highlight>
     void reset(LineRange range) { Base::operator=({range}); }
 
     void update(ConstArrayView<LineModification> modifs);
-    void add_range(LineRange range, FunctionRef<void (LineRange)> on_new_range);
+    LineRangeList add_range(LineRange range);
     void remove_range(LineRange range);
 };
 

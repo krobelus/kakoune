@@ -1838,35 +1838,35 @@ struct RegexMatch
 
 using RegexMatchList = Vector<RegexMatch, MemoryDomain::Regions>;
 
-void insert_matches(const Buffer& buffer, RegexMatchList& matches, const Regex& regex, bool capture, LineRange range)
+void insert_matches(const Buffer& buffer, RegexMatchList& matches, const Regex& regex, bool capture, const LineRangeList& ranges)
 {
     size_t pivot = matches.size();
     capture = capture and regex.mark_count() > 0;
     ThreadedRegexVM<const char*, RegexMode::Forward | RegexMode::Search> vm{*regex.impl()};
-    for (auto line = range.begin; line < range.end; ++line)
+    for (LineRange range : ranges)
     {
-        const StringView l = buffer[line];
-        const auto flags = RegexExecFlags::NotEndOfLine; // buffer line already ends with \n
-        for (auto&& m : RegexIterator{l.begin(), l.end(), vm, flags})
+        for (auto line = range.begin; line < range.end; ++line)
         {
-            const bool with_capture = capture and m[1].matched and
-                                      m[0].second - m[0].first < std::numeric_limits<uint16_t>::max();
-            matches.push_back({
-                line,
-                (int)(m[0].first - l.begin()),
-                (int)(m[0].second - l.begin()),
-                (uint16_t)(with_capture ? m[1].first - m[0].first : 0),
-                (uint16_t)(with_capture ? m[1].second - m[1].first : 0)
-            });
+            const StringView l = buffer[line];
+            const auto flags = RegexExecFlags::NotEndOfLine; // buffer line already ends with \n
+            for (auto&& m : RegexIterator{l.begin(), l.end(), vm, flags})
+            {
+                const bool with_capture = capture and m[1].matched and
+                                          m[0].second - m[0].first < std::numeric_limits<uint16_t>::max();
+                matches.push_back({
+                    line,
+                    (int)(m[0].first - l.begin()),
+                    (int)(m[0].second - l.begin()),
+                    (uint16_t)(with_capture ? m[1].first - m[0].first : 0),
+                    (uint16_t)(with_capture ? m[1].second - m[1].first : 0)
+                });
+            }
         }
     }
 
-    auto pos = std::lower_bound(matches.begin(), matches.begin() + pivot, range.begin,
-                                [](const RegexMatch& m, LineCount l) { return m.line < l; });
-    kak_assert(pos == matches.begin() + pivot or pos->line >= range.end); // We should not have had matches for range
-
     // Move new matches into position.
-    std::rotate(pos, matches.begin() + pivot, matches.end());
+    std::inplace_merge(matches.begin(), matches.begin() + pivot, matches.end(),
+                       [](const auto& lhs, const auto& rhs) { return lhs.line < rhs.line; });
 }
 
 void update_matches(const Buffer& buffer, ConstArrayView<LineModification> modifs,
@@ -2200,7 +2200,7 @@ private:
             for (size_t i = 0; i < m_regions.size(); ++i)
             {
                 cache.matches[i] = RegionMatches{};
-                m_regions.item(i).value->add_matches(buffer, range, cache.matches[i]);
+                m_regions.item(i).value->add_matches(buffer, {range}, cache.matches[i]);
             }
             cache.ranges.reset(range);
             cache.buffer_timestamp = buffer_timestamp;
@@ -2225,13 +2225,16 @@ private:
                 modified = true;
             }
 
-            cache.ranges.add_range(range, [&, this](const LineRange& range) {
-                if (range.begin == range.end)
-                    return;
+            auto touched_ranges = cache.ranges.add_range(range);
+            if (not touched_ranges.empty())
+            {
                 for (size_t i = 0; i < m_regions.size(); ++i)
-                    m_regions.item(i).value->add_matches(buffer, range, cache.matches[i]);
-                modified = true;
-            });
+                {
+                    if (any_of(touched_ranges, [](auto range) { return range.begin != range.end; }))
+                        modified = true;
+                    m_regions.item(i).value->add_matches(buffer, touched_ranges, cache.matches[i]);
+                }
+            }
             return modified;
         }
     }
@@ -2340,16 +2343,16 @@ private:
             return m_delegate->highlight(context, display_buffer, range);
         }
 
-        void add_matches(const Buffer& buffer, LineRange range, RegionMatches& matches) const
+        void add_matches(const Buffer& buffer, const LineRangeList& ranges, RegionMatches& matches) const
         {
             if (m_default)
                 return;
 
-            Kakoune::insert_matches(buffer, matches.begin_matches, m_begin, m_match_capture, range);
+            Kakoune::insert_matches(buffer, matches.begin_matches, m_begin, m_match_capture, ranges);
             if (not m_end.empty())
-                Kakoune::insert_matches(buffer, matches.end_matches, m_end, m_match_capture, range);
+                Kakoune::insert_matches(buffer, matches.end_matches, m_end, m_match_capture, ranges);
             if (not m_recurse.empty())
-                Kakoune::insert_matches(buffer, matches.recurse_matches, m_recurse, m_match_capture, range);
+                Kakoune::insert_matches(buffer, matches.recurse_matches, m_recurse, m_match_capture, ranges);
         }
 
         bool match_capture() const { return m_match_capture; }
