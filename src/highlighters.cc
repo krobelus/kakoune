@@ -2117,8 +2117,8 @@ public:
         ParametersParser parser{params, region_desc.params};
 
         const bool match_capture = (bool)parser.get_switch("match-capture");
-        if (parser[0].empty() or parser[1].empty())
-            throw runtime_error("begin and end must not be empty");
+        if (parser[0].empty())
+            throw runtime_error("begin must not be empty");
 
         RegexCompileFlags flags = RegexCompileFlags::Optimize | RegexCompileFlags::UsedLiterals;
         if (not match_capture)
@@ -2130,12 +2130,16 @@ public:
         if (it == registry.end())
             throw runtime_error(format("no such highlighter type: '{}'", type));
 
+        Regex end;
+        if (not parser[1].empty())
+            end = Regex{parser[1], flags};
+
         Regex recurse;
         if (auto recurse_switch = parser.get_switch("recurse"))
             recurse = Regex{*recurse_switch, flags};
 
         auto delegate = it->value.factory(parser.positionals_from(3), nullptr);
-        return std::make_unique<RegionHighlighter>(std::move(delegate), Regex{parser[0], flags}, Regex{parser[1], flags}, recurse, match_capture);
+        return std::make_unique<RegionHighlighter>(std::move(delegate), Regex{parser[0], flags}, end, recurse, match_capture);
     }
 
     static std::unique_ptr<Highlighter> create_default_region(HighlighterParameters params, Highlighter* parent)
@@ -2251,18 +2255,24 @@ private:
             const RegionMatches& matches = cache.matches[begin.first];
             auto& region = m_regions.item(begin.first);
             auto beg_it = begin.second;
-            auto end_it = matches.find_matching_end(buffer, beg_it->end_coord(),
-                                                    region.value->match_capture() ? beg_it->capture(buffer) : Optional<StringView>{});
-
-            if (end_it == matches.end_matches.end() or end_it->end_coord() >= range.end) // region continue past range end
+            RegexMatchList::const_iterator end_it;
+            if (region.value->has_end())
             {
-                auto begin_coord = beg_it->begin_coord();
-                if (begin_coord < range.end)
-                    regions.push_back({begin_coord, range.end, region.key});
-                break;
-            }
+                end_it = matches.find_matching_end(buffer, beg_it->end_coord(),
+                                                        region.value->match_capture() ? beg_it->capture(buffer) : Optional<StringView>{});
 
+                if (end_it == matches.end_matches.end() or end_it->end_coord() >= range.end) // region continue past range end
+                {
+                    auto begin_coord = beg_it->begin_coord();
+                    if (begin_coord < range.end)
+                        regions.push_back({begin_coord, range.end, region.key});
+                    break;
+                }
+            }
+            else
+                end_it = beg_it;
             auto end_coord = end_it->end_coord();
+
             regions.push_back({beg_it->begin_coord(), end_coord, region.key});
 
             // With empty begin and end matches (for example if the regexes
@@ -2336,13 +2346,15 @@ private:
                 return;
 
             Kakoune::insert_matches(buffer, matches.begin_matches, m_begin, m_match_capture, range);
-            Kakoune::insert_matches(buffer, matches.end_matches, m_end, m_match_capture, range);
+            if (not m_end.empty())
+                Kakoune::insert_matches(buffer, matches.end_matches, m_end, m_match_capture, range);
             if (not m_recurse.empty())
                 Kakoune::insert_matches(buffer, matches.recurse_matches, m_recurse, m_match_capture, range);
         }
 
         bool match_capture() const { return m_match_capture; }
         bool is_default() const { return m_default; }
+        bool has_end() const { return not m_end.empty(); }
 
         Highlighter& delegate() { return *m_delegate; }
 
