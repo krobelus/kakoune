@@ -145,12 +145,13 @@ void LineRangeSet::update(ConstArrayView<LineModification> modifs)
     erase(remove_if(*this, [](auto& r) { return r.begin >= r.end; }), end());
 }
 
-void LineRangeSet::add_range(LineRange range, FunctionRef<void (LineRange)> on_new_range)
+LineRangeList LineRangeSet::add_range(LineRange range)
 {
+    LineRangeList touched_ranges;
     auto insert_at = std::lower_bound(begin(), end(), range.begin,
                                       [](LineRange range, LineCount line) { return range.end < line; });
     if (insert_at == end() or insert_at->begin > range.end)
-        on_new_range(range);
+        touched_ranges.push_back(range);
     else
     {
         auto pos = range.begin;
@@ -158,16 +159,17 @@ void LineRangeSet::add_range(LineRange range, FunctionRef<void (LineRange)> on_n
         for (; it != end() and it->begin <= range.end; ++it)
         {
             if (pos < it->begin)
-                on_new_range({pos, it->begin});
+                touched_ranges.push_back({pos, it->begin});
 
             range = LineRange{std::min(range.begin, it->begin), std::max(range.end, it->end)};
             pos = it->end;
         }
         insert_at = erase(insert_at, it);
         if (pos < range.end)
-            on_new_range({pos, range.end});
+            touched_ranges.push_back({pos, range.end});
     }
     insert(insert_at, range);
+    return touched_ranges;
 }
 
 void LineRangeSet::remove_range(LineRange range)
@@ -264,64 +266,61 @@ UnitTest test_line_modifications{[]()
 }};
 
 UnitTest test_line_range_set{[]{
-    auto expect = [](ConstArrayView<LineRange> ranges) {
-        return [it = ranges.begin(), end = ranges.end()](LineRange r) mutable {
-            kak_assert(it != end);
-            kak_assert(r == *it++);
-        };
+    auto expect = [](ConstArrayView<LineRange> actual, ConstArrayView<LineRange> expected) {
+        kak_assert(actual == expected);
     };
 
     {
         LineRangeSet ranges;
-        ranges.add_range({0, 5}, expect({{0, 5}}));
-        ranges.add_range({10, 15}, expect({{10, 15}}));
-        ranges.add_range({5, 10}, expect({{5, 10}}));
+        expect(ranges.add_range({0, 5}), {{0, 5}});
+        expect(ranges.add_range({10, 15}), {{10, 15}});
+        expect(ranges.add_range({5, 10}), {{5, 10}});
         kak_assert((ranges.view() == ConstArrayView<LineRange>{{0, 15}}));
-        ranges.add_range({5, 10}, expect({}));
+        expect(ranges.add_range({5, 10}), {});
         ranges.remove_range({3, 8});
         kak_assert((ranges.view() == ConstArrayView<LineRange>{{0, 3}, {8, 15}}));
     }
     {
         LineRangeSet ranges;
-        ranges.add_range({0, 7}, expect({{0, 7}}));
-        ranges.add_range({9, 15}, expect({{9, 15}}));
-        ranges.add_range({5, 10}, expect({{7, 9}}));
+        expect(ranges.add_range({0, 7}), {{0, 7}});
+        expect(ranges.add_range({9, 15}), {{9, 15}});
+        expect(ranges.add_range({5, 10}), {{7, 9}});
         kak_assert((ranges.view() == ConstArrayView<LineRange>{{0, 15}}));
     }
     {
         LineRangeSet ranges;
-        ranges.add_range({0, 7}, expect({{0, 7}}));
-        ranges.add_range({11, 15}, expect({{11, 15}}));
-        ranges.add_range({5, 10}, expect({{7, 10}}));
+        expect(ranges.add_range({0, 7}), {{0, 7}});
+        expect(ranges.add_range({11, 15}), {{11, 15}});
+        expect(ranges.add_range({5, 10}), {{7, 10}});
         kak_assert((ranges.view() == ConstArrayView<LineRange>{{0, 10}, {11, 15}}));
         ranges.remove_range({8, 13});
         kak_assert((ranges.view() == ConstArrayView<LineRange>{{0, 8}, {13, 15}}));
     }
     {
         LineRangeSet ranges;
-        ranges.add_range({0, 5}, expect({{0, 5}}));
-        ranges.add_range({10, 15}, expect({{10, 15}}));
+        expect(ranges.add_range({0, 5}), {{0, 5}});
+        expect(ranges.add_range({10, 15}), {{10, 15}});
         ranges.update(ConstArrayView<LineModification>{{3, 3, 3, 1}, {11, 9, 2, 4}});
         kak_assert((ranges.view() == ConstArrayView<LineRange>{{0, 3}, {8, 9}, {13, 15}}));
     }
     {
         LineRangeSet ranges;
-        ranges.add_range({0, 5}, expect({{0, 5}}));
+        expect(ranges.add_range({0, 5}), {{0, 5}});
         ranges.update(ConstArrayView<LineModification>{{2, 2, 2, 0}});
         kak_assert((ranges.view() == ConstArrayView<LineRange>{{0, 3}}));
     }
     {
         LineRangeSet ranges;
-        ranges.add_range({0, 5}, expect({{0, 5}}));
+        expect(ranges.add_range({0, 5}), {{0, 5}});
         ranges.update(ConstArrayView<LineModification>{{2, 2, 0, 2}});
         kak_assert((ranges.view() == ConstArrayView<LineRange>{{0, 2}, {4, 7}}));
     }
     {
         LineRangeSet ranges;
-        ranges.add_range({0, 1}, expect({{0, 1}}));
-        ranges.add_range({5, 10}, expect({{5, 10}}));
-        ranges.add_range({15, 20}, expect({{15, 20}}));
-        ranges.add_range({25, 30}, expect({{25, 30}}));
+        expect(ranges.add_range({0, 1}), {{0, 1}});
+        expect(ranges.add_range({5, 10}), {{5, 10}});
+        expect(ranges.add_range({15, 20}), {{15, 20}});
+        expect(ranges.add_range({25, 30}), {{25, 30}});
         ranges.update(ConstArrayView<LineModification>{{2, 2, 3, 0}});
         kak_assert((ranges.view() == ConstArrayView<LineRange>{{0, 1}, {2, 7}, {12, 17}, {22, 27}}));
     }

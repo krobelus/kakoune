@@ -2210,7 +2210,7 @@ private:
         m_regexes.insert({key, Regex{str, flags}});
     }
 
-    void add_matches(const Buffer& buffer, LineRange range, Cache& cache) const
+    void add_matches(const Buffer& buffer, const LineRangeList& ranges, Cache& cache) const
     {
         for (auto& [key, regex] : m_regexes)
             cache.matches[key];
@@ -2226,42 +2226,42 @@ private:
         for (auto& [key, regex] : m_regexes)
             matchers.push_back(Matcher{cache.matches.get(key), regex});
 
-        for (auto line = range.begin; line < range.end; ++line)
+        for (LineRange range : ranges)
         {
-            const StringView l = buffer[line];
-            const auto flags = RegexExecFlags::NotEndOfLine; // buffer line already ends with \n
-
-            for (auto& [matches, regex, pivot, vm] : matchers)
+            for (auto line = range.begin; line < range.end; ++line)
             {
-                auto extra_flags = RegexExecFlags::None;
-                auto pos = l.begin();
-                while (vm.exec(pos, l.end(), l.begin(), l.end(), flags | extra_flags))
-                {
-                    ConstArrayView<const char*> captures = vm.captures();
-                    const bool with_capture = regex.mark_count() > 0 and captures[2] != nullptr and
-                                              captures[1] - captures[0] < std::numeric_limits<uint16_t>::max();
-                    matches.push_back({
-                        line,
-                        (int)(captures[0] - l.begin()),
-                        (int)(captures[1] - l.begin()),
-                        (uint16_t)(with_capture ? captures[2] - captures[0] : 0),
-                        (uint16_t)(with_capture ? captures[3] - captures[2] : 0)
-                    });
-                    pos = captures[1];
+                const StringView l = buffer[line];
+                const auto flags = RegexExecFlags::NotEndOfLine; // buffer line already ends with \n
 
-                    extra_flags = (captures[0] == captures[1]) ? RegexExecFlags::NotInitialNull : RegexExecFlags::None;
+                for (auto& [matches, regex, pivot, vm] : matchers)
+                {
+                    auto extra_flags = RegexExecFlags::None;
+                    auto pos = l.begin();
+                    while (vm.exec(pos, l.end(), l.begin(), l.end(), flags | extra_flags))
+                    {
+                        ConstArrayView<const char*> captures = vm.captures();
+                        const bool with_capture = regex.mark_count() > 0 and captures[2] != nullptr and
+                                                  captures[1] - captures[0] < std::numeric_limits<uint16_t>::max();
+                        matches.push_back({
+                            line,
+                            (int)(captures[0] - l.begin()),
+                            (int)(captures[1] - l.begin()),
+                            (uint16_t)(with_capture ? captures[2] - captures[0] : 0),
+                            (uint16_t)(with_capture ? captures[3] - captures[2] : 0)
+                        });
+                        pos = captures[1];
+
+                        extra_flags = (captures[0] == captures[1]) ? RegexExecFlags::NotInitialNull : RegexExecFlags::None;
+                    }
                 }
             }
         }
 
         for (auto& [matches, regex, pivot, vm] : matchers)
         {
-            auto pos = std::lower_bound(matches.begin(), matches.begin() + pivot, range.begin,
-                                        [](const RegexMatch& m, LineCount l) { return m.line < l; });
-            kak_assert(pos == matches.begin() + pivot or pos->line >= range.end); // We should not have had matches for range
-
             // Move new matches into position.
-            std::rotate(pos, matches.begin() + pivot, matches.end());
+            std::inplace_merge(matches.begin(), matches.begin() + pivot, matches.end(),
+                               [](const auto& lhs, const auto& rhs) { return lhs.line < rhs.line; });
         }
     }
 
@@ -2315,7 +2315,7 @@ private:
                 add_regex(region->m_recurse, region->match_capture());
             }
 
-            add_matches(buffer, range, cache);
+            add_matches(buffer, {range}, cache);
             cache.ranges.reset(range);
             cache.buffer_timestamp = buffer_timestamp;
             cache.regions_timestamp = m_regions_timestamp;
@@ -2333,12 +2333,13 @@ private:
                 modified = true;
             }
 
-            cache.ranges.add_range(range, [&, this](const LineRange& range) {
-                if (range.begin == range.end)
-                    return;
-                add_matches(buffer, range, cache);
-                modified = true;
-            });
+            auto touched_ranges = cache.ranges.add_range(range);
+            if (not touched_ranges.empty())
+            {
+                if (any_of(touched_ranges, [](auto range) { return range.begin != range.end; }))
+                    modified = true;
+                add_matches(buffer, touched_ranges, cache);
+            }
             return modified;
         }
     }
