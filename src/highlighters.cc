@@ -2210,8 +2210,9 @@ private:
         m_regexes.insert({key, Regex{str, flags}});
     }
 
-    void add_matches(const Buffer& buffer, const LineRangeList& ranges, Cache& cache) const
+    bool add_matches(const Buffer& buffer, Generator<LineRange>&& ranges, Cache& cache) const
     {
+        bool modified = false;
         for (auto& [key, regex] : m_regexes)
             cache.matches[key];
 
@@ -2228,6 +2229,8 @@ private:
 
         for (LineRange range : ranges)
         {
+            if (range.begin != range.end)
+                modified = true;
             for (auto line = range.begin; line < range.end; ++line)
             {
                 const StringView l = buffer[line];
@@ -2263,6 +2266,8 @@ private:
             std::inplace_merge(matches.begin(), matches.begin() + pivot, matches.end(),
                                [](const auto& lhs, const auto& rhs) { return lhs.line < rhs.line; });
         }
+
+        return modified;
     }
 
     void update_changed_lines(const Buffer& buffer, ConstArrayView<LineModification> modifs, Cache& cache)
@@ -2315,7 +2320,7 @@ private:
                 add_regex(region->m_recurse, region->match_capture());
             }
 
-            add_matches(buffer, {range}, cache);
+            add_matches(buffer, [range]() -> Generator<LineRange> { co_yield range; }(), cache);
             cache.ranges.reset(range);
             cache.buffer_timestamp = buffer_timestamp;
             cache.regions_timestamp = m_regions_timestamp;
@@ -2334,12 +2339,8 @@ private:
             }
 
             auto touched_ranges = cache.ranges.add_range(range);
-            if (not touched_ranges.empty())
-            {
-                if (any_of(touched_ranges, [](auto range) { return range.begin != range.end; }))
-                    modified = true;
-                add_matches(buffer, touched_ranges, cache);
-            }
+            if (add_matches(buffer, std::move(touched_ranges), cache))
+                modified = true;
             return modified;
         }
     }

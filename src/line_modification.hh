@@ -2,6 +2,7 @@
 #define line_change_watcher_hh_INCLUDED
 
 #include "array_view.hh"
+#include "coroutine.hh"
 #include "units.hh"
 #include "utils.hh"
 #include "range.hh"
@@ -26,11 +27,9 @@ Vector<LineModification> compute_line_modifications(const Buffer& buffer, size_t
 
 using LineRange = Range<LineCount>;
 
-using LineRangeList = Vector<LineRange, MemoryDomain::Highlight>;
-
-struct LineRangeSet : private LineRangeList
+struct LineRangeSet : private Vector<LineRange, MemoryDomain::Highlight>
 {
-    using Base = LineRangeList;
+    using Base = Vector<LineRange, MemoryDomain::Highlight>;
     using Base::operator[];
     using Base::begin;
     using Base::end;
@@ -40,7 +39,7 @@ struct LineRangeSet : private LineRangeList
     void reset(LineRange range) { Base::operator=({range}); }
 
     void update(ConstArrayView<LineModification> modifs);
-    LineRangeList add_range(LineRange range);
+    Generator<LineRange> add_range(LineRange range);
     void remove_range(LineRange range);
 };
 

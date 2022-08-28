@@ -145,13 +145,12 @@ void LineRangeSet::update(ConstArrayView<LineModification> modifs)
     erase(remove_if(*this, [](auto& r) { return r.begin >= r.end; }), end());
 }
 
-LineRangeList LineRangeSet::add_range(LineRange range)
+Generator<LineRange> LineRangeSet::add_range(LineRange range)
 {
-    LineRangeList touched_ranges;
     auto insert_at = std::lower_bound(begin(), end(), range.begin,
                                       [](LineRange range, LineCount line) { return range.end < line; });
     if (insert_at == end() or insert_at->begin > range.end)
-        touched_ranges.push_back(range);
+        co_yield range;
     else
     {
         auto pos = range.begin;
@@ -159,17 +158,16 @@ LineRangeList LineRangeSet::add_range(LineRange range)
         for (; it != end() and it->begin <= range.end; ++it)
         {
             if (pos < it->begin)
-                touched_ranges.push_back({pos, it->begin});
+                co_yield LineRange{pos, it->begin};
 
             range = LineRange{std::min(range.begin, it->begin), std::max(range.end, it->end)};
             pos = it->end;
         }
         insert_at = erase(insert_at, it);
         if (pos < range.end)
-            touched_ranges.push_back({pos, range.end});
+            co_yield LineRange{pos, range.end};
     }
     insert(insert_at, range);
-    return touched_ranges;
 }
 
 void LineRangeSet::remove_range(LineRange range)
@@ -266,8 +264,8 @@ UnitTest test_line_modifications{[]()
 }};
 
 UnitTest test_line_range_set{[]{
-    auto expect = [](ConstArrayView<LineRange> actual, ConstArrayView<LineRange> expected) {
-        kak_assert(actual == expected);
+    auto expect = [](Generator<LineRange> actual, ConstArrayView<LineRange> expected) {
+        kak_assert(ConstArrayView<LineRange>{actual | gather<Vector<LineRange>>()} == expected);
     };
 
     {
