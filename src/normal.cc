@@ -2009,12 +2009,17 @@ void redo(Context& context, NormalParams params)
         throw runtime_error("nothing left to redo");
 }
 
-template<Direction direction>
+template<Direction direction, bool to_jump>
 void undo_selection_change(Context& context, NormalParams params)
 {
+    if (to_jump and context.is_editing_selection())
+    {
+        jump<direction>(context, params);
+        return;
+    }
     int count = std::max(1, params.count);
     while (count--)
-        context.undo_selection_change<direction>();
+        context.undo_selection_change<direction, to_jump>();
 }
 
 void exec_user_mappings(Context& context, NormalParams params)
@@ -2340,8 +2345,8 @@ static constexpr HashMap<Key, NormalCmd, MemoryDomain::Undefined, KeymapBackend>
     { {'u'}, {"undo", undo} },
     { {'U'}, {"redo", redo} },
 
-    { {ctrl('h')}, {"undo selection change", undo_selection_change<Backward>} },
-    { {ctrl('k')}, {"redo selection change", undo_selection_change<Forward>} },
+    { {ctrl('h')}, {"undo selection change", undo_selection_change<Backward, false>} },
+    { {ctrl('k')}, {"redo selection change", undo_selection_change<Forward, false>} },
 
     { {alt('i')}, {"select inner object", select_object<ObjectFlags::ToBegin | ObjectFlags::ToEnd | ObjectFlags::Inner>} },
     { {alt('a')}, {"select whole object", select_object<ObjectFlags::ToBegin | ObjectFlags::ToEnd>} },
@@ -2366,9 +2371,9 @@ static constexpr HashMap<Key, NormalCmd, MemoryDomain::Undefined, KeymapBackend>
     { {alt('>')}, {"indent, including empty lines", indent<true>} },
     { {alt('<')}, {"deindent, not including incomplete indent", deindent<false>} },
 
-    { {ctrl('i')}, {"jump forward in jump list",jump<Forward>} },
-    { {Key::Tab}, {"jump forward in jump list",jump<Forward>} }, // legacy terminals encode <tab> / <c-i> the same way
-    { {ctrl('o')}, {"jump backward in jump list", jump<Backward>} },
+    { {ctrl('i')}, {"jump forward in jump list",undo_selection_change<Forward, true>} },
+    { {Key::Tab}, {"jump forward in jump list",undo_selection_change<Forward, true>} }, // legacy terminals encode <tab> / <c-i> the same way
+    { {ctrl('o')}, {"jump backward in jump list", undo_selection_change<Backward, true>} },
     { {ctrl('s')}, {"push current selections in jump list", push_selections} },
 
     { {')'}, {"rotate main selection forward", rotate_selections<Forward>} },
