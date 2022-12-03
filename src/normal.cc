@@ -1417,8 +1417,6 @@ void select_object(Context& context, NormalParams params)
          {{alt(';')},    "run command in object context"}}));
 }
 
-enum Direction { Backward = -1, Forward = 1 };
-
 template<Direction direction, bool half = false>
 void scroll(Context& context, NormalParams params)
 {
@@ -2016,18 +2014,12 @@ void redo(Context& context, NormalParams params)
         throw runtime_error("nothing left to redo");
 }
 
+template<Direction direction>
 void undo_selection_change(Context& context, NormalParams params)
 {
     int count = std::max(1, params.count);
     while (count--)
-        context.undo_selection_change();
-}
-
-void redo_selection_change(Context& context, NormalParams params)
-{
-    int count = std::max(1, params.count);
-    while (count--)
-        context.redo_selection_change();
+        context.undo_selection_change<direction>();
 }
 
 void exec_user_mappings(Context& context, NormalParams params)
@@ -2353,8 +2345,8 @@ static constexpr HashMap<Key, NormalCmd, MemoryDomain::Undefined, KeymapBackend>
     { {'u'}, {"undo", undo} },
     { {'U'}, {"redo", redo} },
 
-    { {ctrl('h')}, {"undo selection change", undo_selection_change} },
-    { {ctrl('k')}, {"redo selection change", redo_selection_change} },
+    { {ctrl('h')}, {"undo selection change", undo_selection_change<Backward>} },
+    { {ctrl('k')}, {"redo selection change", undo_selection_change<Forward>} },
 
     { {alt('i')}, {"select inner object", select_object<ObjectFlags::ToBegin | ObjectFlags::ToEnd | ObjectFlags::Inner>} },
     { {alt('a')}, {"select whole object", select_object<ObjectFlags::ToBegin | ObjectFlags::ToEnd>} },
