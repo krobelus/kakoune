@@ -190,7 +190,8 @@ private:
 
             SelectionList selections;
             HistoryId parent;
-            HistoryId redo_child = HistoryId::Invalid;
+            Vector<HistoryId, MemoryDomain::Selections> redo_children;
+            int redo_children_index = 0;
             bool is_jump = false;
         };
 

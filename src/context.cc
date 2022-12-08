@@ -235,21 +235,39 @@ void Context::SelectionHistory::undo()
         HistoryId current = m_history_id;
         while (true)
         {
+            auto& current_node = history_node(current);
             if constexpr (backward)
-                next = history_node(current).parent;
+            {
+                if (current_node.redo_children_index == 0)
+                    next = current_node.parent;
+                else
+                    next = current_node.redo_children.at(--current_node.redo_children_index);
+            }
             else
-                next = history_node(current).redo_child;
+            {
+                if (current_node.redo_children_index == current_node.redo_children.size())
+                    next = HistoryId::Invalid;
+                else
+                    next = current_node.redo_children.at(current_node.redo_children_index++);
+            }
             if (next == HistoryId::Invalid)
                 throw runtime_error(to_jump ? "no previous jump" : "no selection change to undo");
             if constexpr (backward)
-                history_node(next).redo_child = current;
+            {
+                auto& next_node = history_node(next);
+                if (auto it = find(next_node.redo_children, current); it != next_node.redo_children.end())
+                    next_node.redo_children_index = std::distance(next_node.redo_children.begin(), it);
+                else
+                {
+                    next_node.redo_children_index = next_node.redo_children.size();
+                    next_node.redo_children.push_back(current);
+                }
+            }
             if (to_jump and not history_node(next).is_jump)
                 current = next;
             else
                 break;
         }
-        if (next == HistoryId::Invalid)
-            throw runtime_error(backward ? "no selection change to undo" : "no selection change to redo");
         auto select_next = [&, next] {
             m_history_id = next;
             m_staging = current_history_node();
@@ -294,13 +312,14 @@ void Context::SelectionHistory::forget_buffer(Buffer& buffer)
     for (auto& node : m_history)
     {
         node.parent = new_id(node.parent);
-        node.redo_child = new_id(node.redo_child);
+        for (auto& redo_child : node.redo_children)
+            redo_child = new_id(redo_child);
     }
     m_history_id = new_id(m_history_id);
     if (m_staging)
     {
         m_staging->parent = new_id(m_staging->parent);
-        kak_assert(m_staging->redo_child == HistoryId::Invalid);
+        kak_assert(m_staging->redo_children.empty());
     }
     kak_assert(m_history_id != HistoryId::Invalid or m_staging);
 }
