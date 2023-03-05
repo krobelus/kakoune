@@ -5,7 +5,9 @@
 #include "hash.hh"
 
 #include <type_traits>
+#if __has_include(<compare>)
 #include <compare>
+#endif
 
 namespace Kakoune
 {
