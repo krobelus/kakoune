@@ -1852,8 +1852,8 @@ struct ForwardHighlighterApplier
             auto& atoms = region_lines[i].atoms();
             auto it = line_it->insert(
                 line_it->begin() + idx,
-                std::move_iterator(atoms.begin()),
-                std::move_iterator(atoms.end()));
+                std::make_move_iterator(atoms.begin()),
+                std::make_move_iterator(atoms.end()));
 
             if (line_it == cur_line)
                 cur_atom = it + atoms.size();
