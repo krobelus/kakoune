@@ -36,6 +36,7 @@ enum class MemoryDomain
     Events,
     Completion,
     Regex,
+    RankedMatch,
     Count
 };
 
@@ -67,6 +68,7 @@ inline const char* domain_name(MemoryDomain domain)
         case MemoryDomain::Events: return "Events";
         case MemoryDomain::Completion: return "Completion";
         case MemoryDomain::Regex: return "Regex";
+        case MemoryDomain::RankedMatch: return "RankedMatch";
         case MemoryDomain::Count: break;
     }
     kak_assert(false);

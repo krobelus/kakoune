@@ -3,6 +3,7 @@
 
 #include "string.hh"
 #include "meta.hh"
+#include "vector.hh"
 
 #include <cstdint>
 
@@ -54,6 +55,7 @@ private:
     StringView m_candidate{};
     bool m_matches = false;
     Flags m_flags = Flags::None;
+    Vector<RankedMatch, MemoryDomain::RankedMatch> m_path_component_matches;
     int m_word_boundary_match_count = 0;
     int m_max_index = 0;
     size_t m_input_sequence_number = 0;
