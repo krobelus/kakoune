@@ -79,6 +79,7 @@ declare-option -hidden str git_blame
 declare-option -hidden str git_blob
 declare-option -hidden line-specs git_diff_flags
 declare-option -hidden int-list git_hunk_list
+declare-option -hidden str git_work_tree
 
 define-command -params 1.. \
     -docstring %{
@@ -133,7 +134,8 @@ define-command -params 1.. \
     else
         if git_work_tree=$(
             git rev-parse --show-toplevel 2>/dev/null ||
-            git -C "${kak_buffile%/*}" rev-parse --show-toplevel 2>/dev/null
+            git -C "${kak_buffile%/*}" rev-parse --show-toplevel 2>/dev/null ||
+            { [ -n "${kak_opt_git_work_tree}" ] && echo "${kak_opt_git_work_tree}"; }
         ); then
             export GIT_WORK_TREE=${GIT_WORK_TREE:-"$git_work_tree"}
             export GIT_DIR=${GIT_DIR:-"$GIT_WORK_TREE/.git"}
@@ -152,7 +154,8 @@ define-command -params 1.. \
     git_args_unquoted=
     if git_work_tree=$(
         git rev-parse --show-toplevel 2>/dev/null ||
-        git -C "${kak_buffile%/*}" rev-parse --show-toplevel 2>/dev/null
+        git -C "${kak_buffile%/*}" rev-parse --show-toplevel 2>/dev/null ||
+        { [ -n "${kak_opt_git_work_tree}" ] && echo "${kak_opt_git_work_tree}"; }
     ); then
         export GIT_WORK_TREE=${GIT_WORK_TREE:-"$git_work_tree"}
         export GIT_DIR=${GIT_DIR:-"$GIT_WORK_TREE/.git"}
@@ -188,6 +191,7 @@ define-command -params 1.. \
         printf %s "evaluate-commands -try-client '$kak_opt_docsclient' '
                   edit! -fifo ${output} *git*
                   set-option buffer filetype ${filetype}
+                  set-option buffer git_work_tree ''${git_work_tree}''
                   $(hide_blame)
                   set-option buffer git_blob %{}
                   hook -always -once buffer BufCloseFifo .* ''
@@ -800,5 +804,11 @@ define-command -params 1.. \
 define-command git-diff-goto-source \
     -docstring 'Navigate to source by pressing the enter key in hunks when git diff is displayed. Works within :git diff and :git show' %{
     require-module diff
-    diff-jump %sh{ git rev-parse --show-toplevel }
+    diff-jump %sh{
+        if [ -n "${kak_opt_git_work_tree}" ]; then
+            printf %s "${kak_opt_git_work_tree}"
+        else
+            git rev-parse --show-toplevel
+        fi
+    }
 }
