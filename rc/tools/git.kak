@@ -131,6 +131,14 @@ define-command -params 1.. \
             update-diff \
         ;
     else
+        if git_work_tree=$(
+            git rev-parse --show-toplevel 2>/dev/null ||
+            git -C "${kak_buffile%/*}" rev-parse --show-toplevel 2>/dev/null
+        ); then
+            export GIT_WORK_TREE=${GIT_WORK_TREE:-"$git_work_tree"}
+            export GIT_DIR=${GIT_DIR:-"$GIT_WORK_TREE/.git"}
+        fi
+
         case "$1" in
             commit) printf -- "--amend\n--no-edit\n--all\n--reset-author\n--fixup\n--squash\n"; git ls-files -m ;;
             add) git ls-files -dmo --exclude-standard ;;
@@ -138,17 +146,28 @@ define-command -params 1.. \
             grep|edit) git ls-files -c --recurse-submodules ;;
         esac
     fi
-  } \
+    } \
   git %{ evaluate-commands %sh{
-    cd_bufdir() {
-        dirname_buffer="${kak_buffile%/*}"
-        cd "${dirname_buffer}" 2>/dev/null || {
-            printf 'fail Unable to change the current working directory to: %s\n' "${dirname_buffer}"
-            exit 1
-        }
-    }
+    git_args_quoted=
+    git_args_unquoted=
+    if git_work_tree=$(
+        git rev-parse --show-toplevel 2>/dev/null ||
+        git -C "${kak_buffile%/*}" rev-parse --show-toplevel 2>/dev/null
+    ); then
+        export GIT_WORK_TREE=${GIT_WORK_TREE:-"$git_work_tree"}
+        export GIT_DIR=${GIT_DIR:-"$GIT_WORK_TREE/.git"}
+        git_args_quoted="--git-dir '$GIT_DIR' --work-tree '$GIT_WORK_TREE'"
+        git_args_unquoted="--git-dir $GIT_DIR --work-tree $GIT_WORK_TREE"
+    else
+        GIT_WORK_TREE=
+        GIT_DIR=
+    fi
+
     kakquote() {
         printf "%s" "$1" | sed "s/'/''/g; 1s/^/'/; \$s/\$/'/"
+    }
+    perlquote() {
+        printf "%s" "$1" | sed "s/\\\\/\\\\\\\\/g; s/'/\\\\'/g; 1s/^/'/; \$s/\$/'/"
     }
 
     show_git_cmd_output() {
@@ -283,7 +302,6 @@ define-command -params 1.. \
         echo 'map window normal <ret> %{:git blame-jump<ret>}'
         echo 'echo -markup {Information}Press <ret> to jump to blamed commit'
         (
-            cd_bufdir
             printf %s "evaluate-commands -client '$kak_client' %{
                       set-option buffer=$kak_bufname git_blame_flags '$kak_timestamp'
                       set-option buffer=$kak_bufname git_blame_index '$kak_timestamp'
@@ -366,13 +384,12 @@ define-command -params 1.. \
           printf %s "echo -markup '{Information}git $1 succeeded'"
         else
           printf "fail '%s'\n" \
-            "$(printf 'failed to run git %s' "$(printf ' %s' "$@")" | sed "s/'/''/g")"
+            "$(printf 'failed to run git %s%s' "$git_args_quoted" "$(printf ' %s' "$@")" | sed "s/'/''/g")"
         fi
     }
 
     update_diff() {
         (
-            cd_bufdir
             git --no-pager diff --no-ext-diff -U0 "$kak_buffile" | perl -e '
             use utf8;
             $flags = $ENV{"kak_timestamp"};
@@ -511,7 +528,7 @@ define-command -params 1.. \
         msgfile="$(git rev-parse --git-dir)/COMMIT_EDITMSG"
         printf %s "edit '$msgfile'
               hook buffer BufWritePost '.*\Q$msgfile\E' %{ evaluate-commands %sh{
-                  if git commit -F '$msgfile' --cleanup=strip $* > /dev/null; then
+                  if git $git_args_quoted commit -F '$msgfile' --cleanup=strip $* > /dev/null; then
                      printf %s 'evaluate-commands -client $kak_client echo -markup %{{Information}Commit succeeded}; delete-buffer'
                   else
                      printf 'evaluate-commands -client %s fail Commit failed\n' "$kak_client"
@@ -717,7 +734,7 @@ define-command -params 1.. \
             shift
             enquoted="$(printf '"%s" ' "$@")"
             echo "require-module patch"
-            echo "patch git apply $enquoted"
+            echo "patch git $git_args_quoted apply $enquoted"
             ;;
         show|show-branch|log|diff|status)
             show_git_cmd_output "$@"
@@ -762,7 +779,7 @@ define-command -params 1.. \
             shift
             enquoted="$(printf '"%s" ' "$@")"
             printf %s "try %{
-                set-option current grepcmd 'git grep -n --column'
+                set-option current grepcmd 'git $git_args_unquoted grep -n --column'
                 grep $enquoted
                 set-option current grepcmd '$kak_opt_grepcmd'
             }"
