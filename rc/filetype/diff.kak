@@ -92,6 +92,81 @@ define-command diff-jump -params .. -docstring %{
 }
 complete-command diff-jump file
 
+define-command -hidden diff-jump-both -params 2 %{
+    evaluate-commands -draft -save-regs con %{
+        # Save the column because we will move the cursor.
+        set-register c %val{cursor_column} # TODO
+        # If there is a "diff" line, we don't need to look back any further.
+        try %{
+            execute-keys %{<a-l><semicolon><a-?>^(?:> )*diff\b<ret><a-x>}
+        } catch %{
+            # A single file diff won't have a diff line. Start parsing from
+            # the buffer start, so we can tell if +++/--- lines are headers
+            # or content.
+            execute-keys Gk
+        }
+        diff-parse END %{
+            printf "set-register o %s %d\n", quote($other_file), $other_file_line;
+            printf "set-register n %s %d\n", quote($file), $file_line;
+        }
+        evaluate-commands -client %arg{1} %{ edit -existing -- %reg{o} }
+        evaluate-commands -client %arg{2} %{ edit -existing -- %reg{n} }
+    }
+}
+
+define-command -hidden diff-jump-other-version -params 2 %{
+    evaluate-commands -save-regs lc %{
+        evaluate-commands -draft %{
+            set-register l %val{cursor_line}
+            set-register c %val{cursor_column}
+            buffer %arg{1}
+            execute-keys <percent>
+            diff-parse BEGIN %exp{
+                $in_reverse_version = "%arg{2}";
+                if ($in_reverse_version eq "+") {
+                    $version = "-";
+                } else {
+                    $version = "+";
+                }
+                $in_reverse_line = %reg{l};
+                $in_reverse_column = %reg{c};
+            } END %exp{
+                my $column = %reg{c} - 1; # Account for [ +-] diff prefix.
+                print "set-register l $diff_line\n";
+                printf "set-register c %%s %%d %%d\n", quote($file), $file_line, $column;
+            }
+        }
+        evaluate-commands -client %opt{jumpclient} %{
+            buffer %arg{1}
+            execute-keys "%reg{l}g"
+            edit -existing -- %reg{c}
+        }
+    }
+}
+
+declare-option -hidden line-specs diff_flags
+define-command -hidden diff-show -params 3 %{
+    evaluate-commands -save-regs on %{
+        evaluate-commands -draft %{
+            buffer %arg{1}
+            execute-keys <percent>
+            diff-parse BEGIN %{
+                $flags = "";
+                $other_flags = "";
+            } END %{
+                if ($version eq "-") {
+                    ($flags, $other_flags) = ($other_flags, $flags);
+                }
+                printf "set-register o %s\n", $other_flags;
+                printf "set-register n %s\n", $flags;
+                exit;
+            }
+        }
+        set-option "buffer=%arg{2}" diff_flags %val{timestamp} %reg{o}
+        set-option "buffer=%arg{3}" diff_flags %val{timestamp} %reg{n}
+    }
+}
+
 define-command -hidden diff-parse -params 2.. %{
     evaluate-commands -save-regs ae| %{
         set-register a %arg{@}

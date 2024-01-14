@@ -41,7 +41,12 @@ our $directory = $ENV{PWD};
 our $strip;
 our $in_file;
 our $in_file_line;
+our $in_reverse_version;
+our $in_reverse_line;
+our $in_reverse_column;
 our $version = "+";
+our $flags;
+our $other_flags;
 
 eval $begin if defined $begin;
 
@@ -52,19 +57,25 @@ our $diff_line = 0;
 our $commit;
 our $file;
 our $file_line;
+our $other_file;
+our $other_file_line;
 our $diff_line_text;
 
+my $color;
 my $other_version;
+my $other_color;
 if ($version eq "+") {
     $other_version = "-";
+    $color = "green";
+    $other_color = "red";
 } else {
     $other_version = "+";
+    $color = "red";
+    $other_color = "green";
 }
 my $is_recursive_diff = 0;
 my $state = "header";
 my $fallback_file;
-my $other_file;
-my $other_file_line;
 
 sub strip {
     my $is_recursive_diff = shift;
@@ -122,9 +133,15 @@ while (<STDIN>) {
         my $iscontext = m{^[ ]};
         if (m{^[ $version]}) {
            $file_line++ if defined $file_line;
+           if (defined $flags && !$iscontext) {
+               $flags .= " $file_line|\{$color}$version";
+           }
         }
         if (m{^[ $other_version]}) {
            $other_file_line++ if defined $other_file_line;
+           if (defined $flags && !$iscontext) {
+               $other_flags .= " $other_file_line|\{$other_color}$other_version";
+           }
         }
     }
     if (defined $in_file and defined $file and $file eq $in_file) {
@@ -132,6 +149,13 @@ while (<STDIN>) {
             last;
         }
     }
+    if (defined $in_reverse_version && defined $other_file_line && $other_file_line >= $in_reverse_line) {
+        $file_line -= $other_file_line - $in_reverse_line;
+        last;
+    }
+}
+if (defined $in_reverse_version && defined $other_file_line && $other_file_line < $in_reverse_line) {
+    $file_line += $in_reverse_line - $other_file_line;
 }
 if (not defined $file) {
     $file = ($fallback_file or $other_file);

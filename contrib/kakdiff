@@ -1,0 +1,42 @@
+#!/bin/sh
+
+old=$1
+new=$2
+shift 2
+
+exec kak "$old" "$new" -e "
+    require-module diff
+    map buffer normal <ret> %{:diff-jump-other-version *diff* -<ret>}
+    hook buffer FocusOut .* %{execute-keys vv; diff-jump-other-version *diff* -}
+    rename-client old
+    edit -scratch *diff*
+    execute-keys %{!diff -u '$old' '$new'<ret>gk}
+    set-option buffer=*diff* filetype diff
+    map buffer=*diff* normal <ret> %{:diff-jump-both old new<ret>}
+    buffer '$old'
+    add-highlighter buffer/diff flag-lines Default diff_flags
+    hook buffer BufWritePost .* diff-update
+    set-option window jumpclient new
+    with-option windowing_placement horizontal new evaluate-commands %{
+        rename-client new
+        buffer *diff*
+        edit '$new'
+        set-option window jumpclient old
+        map buffer normal <ret> %{:diff-jump-other-version *diff* +<ret>}
+        hook buffer FocusOut .* %{execute-keys vv; diff-jump-other-version *diff* +}
+        add-highlighter buffer/diff flag-lines Default diff_flags
+        hook buffer BufWritePost .* diff-update
+    }
+    diff-show *diff* '$old' '$new'
+    try %{ focus old }
+
+    define-command -hidden diff-update %{
+        evaluate-commands -save-regs t %{
+            set-register t %val{bufname}
+            edit -scratch *diff*
+            execute-keys %{!diff -u '$old' '$new'<ret>gk}
+            diff-show *diff* '$old' '$new'
+            buffer %reg{t}
+        }
+    }
+" "$@"
