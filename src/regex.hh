@@ -168,6 +168,12 @@ bool backward_regex_search(It begin, It end, It subject_begin, It subject_end,
 enum class Quoting;
 String option_to_string(const Regex& re, Quoting quoting);
 Regex option_from_string(Meta::Type<Regex>, StringView str);
+inline bool option_add(Regex& opt, StringView val)
+{
+    String str = opt.str() + val;
+    opt = Regex{str};
+    return not val.empty();
+}
 
 template<typename Iterator, RegexMode mode = RegexMode::Forward,
          typename VmArg = const Regex, typename IdleFunc = NoopIdle>

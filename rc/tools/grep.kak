@@ -5,6 +5,8 @@ provide-module grep %{
 
 require-module jump
 
+set-option -add global jump_buffers |\*grep\*
+
 define-command -params .. -docstring %{
     grep [<arguments>]: grep utility wrapper
     All optional arguments are forwarded to the grep utility
@@ -29,7 +31,8 @@ define-command -params .. -docstring %{
      ( { trap - INT QUIT; ${kak_opt_grepcmd} "$@" 2>&1 | tr -d '\r'; } > ${output} 2>&1 & ) > /dev/null 2>&1 < /dev/null
 
      printf %s\\n "evaluate-commands -try-client '$kak_opt_toolsclient' %{
-               edit! -fifo ${output} *grep*
+               try %{ delete-buffer *grep* }
+               edit -fifo ${output} *grep*
                set-option buffer filetype grep
                set-option buffer jump_current_line 0
                hook -always -once buffer BufCloseFifo .* %{ nop %sh{ rm -r $(dirname ${output}) } }
