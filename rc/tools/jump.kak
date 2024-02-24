@@ -93,6 +93,34 @@ define-command -hidden jump-select-previous %{
     execute-keys ge %opt{jump_current_line}g<a-h> <a-/>^[^:\n]+:\d+:<ret>
 }
 
+define-command jump-buffer-pop -docstring %{
+    delete the last buffer whose name matches the 'jump_buffers' option.
+    Activate the new last buffer in the client specified in the 'toolsclient'
+    option. If the active client is different from 'toolsclient', jump to
+    the current location.
+} %{
+    require-module buffer
+    buffer-with-latest %opt{jump_buffers} delete-buffer
+    try %{
+        evaluate-commands -save-regs b %{
+            buffer-with-latest %opt{jump_buffers} set-register b
+            evaluate-commands -try-client %opt{toolsclient} -verbatim buffer %reg{b}
+            evaluate-commands -try-client %opt{jumpclient} %{
+                evaluate-commands %sh{
+                    if [ -n "${kak_opt_toolsclient}" ] &&
+                    [ "${kak_client}" != "${kak_opt_toolsclient}" ]; then
+                        echo buffer %reg{b}
+                        echo jump
+                    fi
+                }
+            }
+            echo -markup {Information}{\}returned to buffer %reg{b}
+        }
+    } catch %{
+        echo -markup {Information}no jump buffer remaining
+    }
+}
+
 }
 
 hook -once global KakBegin .* %{ require-module jump }

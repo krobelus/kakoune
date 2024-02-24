@@ -20,6 +20,7 @@ define-command -params .. -docstring %{
     If '-push' is given, use a unique name starting with '*grep-' for
     the output buffer instead of replacing the '*grep*' buffer. Use the
     'buffer-latest' command to access the most recent '*grep' buffer.
+    See also the 'jump-buffer-pop' command.
 } grep %{ evaluate-commands %sh{
     pre_edit='try %{ delete-buffer *grep* }'
     bufname='*grep*'
