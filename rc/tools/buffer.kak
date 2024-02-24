@@ -1,3 +1,16 @@
+define-command buffer-latest -params 0..1 -docstring %{
+    buffer-latest [<bufname_regex>]: activate the last buffer that matches <bufname_regex>
+} %{
+    require-module buffer
+    evaluate-commands buffer-with-latest %sh{
+        if [ $# -eq 0 ]; then
+            echo '.*'
+        else
+            echo %arg{1}
+        fi
+    } buffer
+}
+
 provide-module buffer %{
 
     define-command -hidden buffer-with-latest -params 2.. -docstring %{

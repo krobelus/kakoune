@@ -423,6 +423,8 @@ template<bool force_reload>
 void edit(const ParametersParser& parser, Context& context, const ShellContext&)
 {
     const bool scratch = (bool)parser.get_switch("scratch");
+    const Optional<StringView> fifo = parser.get_switch("fifo");
+    const bool unique = (bool)parser.get_switch("unique");
 
     if (parser.positional_count() == 0 and not force_reload and not scratch)
         throw wrong_argument_count();
@@ -432,13 +434,31 @@ void edit(const ParametersParser& parser, Context& context, const ShellContext&)
        (parser.get_switch("debug") ? Buffer::Flags::Debug : Buffer::Flags::None);
 
     auto& buffer_manager = BufferManager::instance();
-    const auto& name = parser.positional_count() > 0 ?
-        parser[0] : (scratch ? generate_buffer_name("*scratch-{}*") : context.buffer().name());
+    String name;
+    if (unique)
+    {
+        if (not (fifo or scratch))
+            throw runtime_error("unique requires fifo or scratch");
+        if (parser.positional_count() == 0)
+            throw runtime_error("scratch-new requires a buffer name pattern");
+        auto split = option_from_string(
+            Meta::Type<std::tuple<String, String>>{}, parser[0]);
+        name = generate_buffer_name([&](int i) {
+            return format("{}{}{}", std::get<0>(split), i, std::get<1>(split));
+        });
+    }
+    else if (parser.positional_count() > 0)
+        name = parser[0];
+    else if (scratch)
+        name = generate_buffer_name([](int i) {  return format("*scratch-{}*", i); });
+    else
+        name = context.buffer().name();
 
     Buffer* buffer = buffer_manager.get_buffer_ifp(name);
+    kak_assert(not unique or buffer == nullptr);
     if (scratch)
     {
-        if (parser.get_switch("readonly") or parser.get_switch("fifo") or parser.get_switch("scroll"))
+        if (parser.get_switch("readonly") or fifo or parser.get_switch("scroll"))
             throw runtime_error("scratch is not compatible with readonly, fifo or scroll");
 
         if (buffer == nullptr or force_reload)
@@ -456,7 +476,7 @@ void edit(const ParametersParser& parser, Context& context, const ShellContext&)
     }
     else
     {
-        if (auto fifo = parser.get_switch("fifo"))
+        if (fifo)
             buffer = open_fifo(name, *fifo, flags, (bool)parser.get_switch("scroll"));
         else if (not buffer)
         {
@@ -485,7 +505,7 @@ void edit(const ParametersParser& parser, Context& context, const ShellContext&)
         context.change_buffer(*buffer);
     buffer = &context.buffer(); // change_buffer hooks might change the buffer again
 
-    if (parser.get_switch("fifo") and not parser.get_switch("scroll"))
+    if (fifo and not parser.get_switch("scroll"))
         context.selections_write_only() = { *buffer, Selection{} };
     else if (param_count > 1 and not parser[1].empty())
     {
@@ -503,6 +523,7 @@ void edit(const ParametersParser& parser, Context& context, const ShellContext&)
 ParameterDesc edit_params{
     { { "existing", { {}, "fail if the file does not exist, do not open a new file" } },
       { "scratch",  { {}, "create a scratch buffer, not linked to a file" } },
+      { "unique",   { {}, "substitute | in <filename> to create a unique buffer name" } },
       { "debug",    { {}, "create buffer as debug output" } },
       { "fifo",     { {filename_arg_completer<true>},  "create a buffer reading its content from a named fifo" } },
       { "readonly", { {}, "create a buffer in readonly mode" } },

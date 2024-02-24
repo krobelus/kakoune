@@ -5,13 +5,29 @@ provide-module grep %{
 
 require-module jump
 
-set-option -add global jump_buffers |\*grep\*
+set-option -add global jump_buffers |\*grep\b.*\*
 
 define-command -params .. -docstring %{
-    grep [<arguments>]: grep utility wrapper
-    All optional arguments are forwarded to the grep utility
-    Passing no argument will perform a literal-string grep for the current selection
+    grep [-push] [<arguments>]: grep utility wrapper
+
+    All of <arguments> are forwarded to the grep utility.
+
+    Passing no argument will perform a literal-string grep for the current selection.
+
+    The output is displayed in a scratch buffer in the client named by the
+    'toolsclient' option.
+
+    If '-push' is given, use a unique name starting with '*grep-' for
+    the output buffer instead of replacing the '*grep*' buffer. Use the
+    'buffer-latest' command to access the most recent '*grep' buffer.
 } grep %{ evaluate-commands %sh{
+    pre_edit='try %{ delete-buffer *grep* }'
+    bufname='*grep*'
+    if [ "$1" = -push ]; then
+        bufname='-unique *grep-|*'
+        pre_edit=
+        shift
+    fi
     if [ $# -eq 0 ]; then
         case "$kak_opt_grepcmd" in
         ag\ * | git\ grep\ * | grep\ * | rg\ * | ripgrep\ * | ugrep\ * | ug\ *)
@@ -31,8 +47,8 @@ define-command -params .. -docstring %{
      ( { trap - INT QUIT; ${kak_opt_grepcmd} "$@" 2>&1 | tr -d '\r'; } > ${output} 2>&1 & ) > /dev/null 2>&1 < /dev/null
 
      printf %s\\n "evaluate-commands -try-client '$kak_opt_toolsclient' %{
-               try %{ delete-buffer *grep* }
-               edit -fifo ${output} *grep*
+               ${pre_edit}
+               edit -fifo ${output} ${bufname}
                set-option buffer filetype grep
                set-option buffer jump_current_line 0
                hook -always -once buffer BufCloseFifo .* %{ nop %sh{ rm -r $(dirname ${output}) } }
