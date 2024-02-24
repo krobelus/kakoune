@@ -82,8 +82,16 @@ declare-option -hidden int-list git_hunk_list
 
 define-command -params 1.. \
     -docstring %{
-        git [<arguments>]: git wrapping helper
+        git [-push] [<arguments>]: git wrapping helper
         All the optional arguments are forwarded to the git utility
+
+        For some commands, output is displayed in a scratch buffer in the
+        client named by the 'docsclient' option.
+
+        If '-push' is given, use a unique name starting with '*git-' for
+        the output buffer instead of replacing the '*git*' buffer. Use the
+        'buffer-latest' command to access the most recent '*git' buffer.
+
         Available commands:
             add
             apply      - alias for "patch git apply"
@@ -140,6 +148,13 @@ define-command -params 1.. \
     fi
   } \
   git %{ evaluate-commands %sh{
+    pre_edit='try %{ delete-buffer *git* }'
+    bufname='*git*'
+    if [ "$1" = -push ]; then
+        bufname='-unique *git-|*'
+        pre_edit=
+        shift
+    fi
     cd_bufdir() {
         dirname_buffer="${kak_buffile%/*}"
         cd "${dirname_buffer}" 2>/dev/null || {
@@ -167,7 +182,9 @@ define-command -params 1.. \
         ( trap - INT QUIT; git "$@" > ${output} 2>&1 & ) > /dev/null 2>&1 < /dev/null
 
         printf %s "evaluate-commands -try-client '$kak_opt_docsclient' '
-                  edit! -fifo ${output} *git*
+                  ${pre_edit}
+                  edit -fifo ${output} $bufname
+
                   set-option buffer filetype ${filetype}
                   $(hide_blame)
                   set-option buffer git_blob %{}
