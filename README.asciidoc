@@ -353,9 +353,16 @@ configuration.
 Finally, the user configuration will load from `${userconf}/kakrc`.
 
 NOTE: If you create a user `autoload` directory in `${userconf}/autoload`,
-the system one at `${runtime}/autoload` will not load anymore. You can
-add a symbolic link to it (or to individual scripts) inside
-`${userconf}/autoload` to keep loading system scripts.
+the system one at `${runtime}/autoload` will not load anymore. You can load
+it by adding this command to `${userconf}/kakrc` or a `.kak` file in the
+`${userconf}/autoload` directory:
+
+-------------------------------------------------------------------------------------------
+evaluate-commands %sh{
+    find "${kak_runtime}"/autoload/ -type f -name '*.kak' |
+        sed 's/.*/try %{ source "&" } catch %{ echo -debug Autoload: could not load "&" }/'
+}
+-------------------------------------------------------------------------------------------
 
 Basic Interaction
 -----------------
