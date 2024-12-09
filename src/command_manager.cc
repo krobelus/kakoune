@@ -15,6 +15,7 @@
 #include "register_manager.hh"
 #include "shell_manager.hh"
 #include "scope.hh"
+#include "unicode.hh"
 #include "utils.hh"
 #include "unit_tests.hh"
 
@@ -316,7 +317,7 @@ Token parse_percent_token(ParseState& state, bool throw_on_unterminated)
                                      it->opening, it->closing)};
         }
 
-        return {type, byte_pos, std::move(quoted.content), quoted.terminated};
+        return {type, byte_pos, std::move(quoted.content), (Codepoint)it->closing, quoted.terminated};
     }
     else
     {
@@ -331,7 +332,7 @@ Token parse_percent_token(ParseState& state, bool throw_on_unterminated)
                                      opening_delimiter, opening_delimiter)};
         }
 
-        return {type, byte_pos, std::move(quoted.content), quoted.terminated};
+        return {type, byte_pos, std::move(quoted.content), opening_delimiter, quoted.terminated};
     }
 }
 
@@ -441,7 +442,7 @@ Optional<Token> CommandParser::read_token(bool throw_on_unterminated)
         return Token{c == '"' ? Token::Type::Expand
                               : Token::Type::RawQuoted,
                      start - line.begin(), std::move(quoted.content),
-                     quoted.terminated};
+                     (Codepoint)c, quoted.terminated};
     }
     else if (c == '%')
     {
@@ -450,7 +451,7 @@ Optional<Token> CommandParser::read_token(bool throw_on_unterminated)
     }
     else if (is_command_separator(c))
         return Token{Token::Type::CommandSeparator,
-                     ++m_state.pos - line.begin(), {}};
+                     ++m_state.pos - line.begin(), ""};
     else
     {
         if (c == '\\' and m_state.pos + 1 != m_state.str.end())
@@ -669,37 +670,50 @@ static Completions complete_expansion(const Context& context,
                                       Token token, ByteCount start,
                                       ByteCount cursor_pos, ByteCount pos_in_token)
 {
+    CandidateList candidates;
     switch (token.type) {
     case Token::Type::RegisterExpand:
-        return { start, cursor_pos,
-                 RegisterManager::instance().complete_register_name(
-                     token.content, pos_in_token) };
+        candidates = RegisterManager::instance().complete_register_name(token.content, pos_in_token);
+        break;
 
     case Token::Type::OptionExpand:
-        return { start, cursor_pos,
-                 GlobalScope::instance().option_registry().complete_option_name(
-                     token.content, pos_in_token) };
+        candidates = GlobalScope::instance().option_registry().complete_option_name(token.content, pos_in_token);
+        break;
 
     case Token::Type::ShellExpand:
         return offset_pos(shell_complete(context, token.content,
                                          pos_in_token), start);
 
     case Token::Type::ValExpand:
-        return { start, cursor_pos,
-                 ShellManager::instance().complete_env_var(
-                     token.content, pos_in_token) };
+        candidates = ShellManager::instance().complete_env_var(token.content, pos_in_token);
+        break;
 
     case Token::Type::FileExpand:
     {
         const auto& ignored_files = context.options()["ignored_files"].get<Regex>();
-        return { start, cursor_pos, complete_filename(
-                 token.content, ignored_files, pos_in_token, FilenameFlags::Expand) };
+        candidates = complete_filename(token.content, ignored_files, pos_in_token, FilenameFlags::Expand);
+        break;
     }
 
     default:
         kak_assert(false);
         throw runtime_error("unknown expansion");
     }
+
+    kak_assert(token.terminator != '\0');
+    kak_assert(not token.terminated);
+
+    for (auto &c : candidates)
+    {
+        if ((token.type == Token::Type::ValExpand and c.ends_with("_")) // opt_, reg_, client_env_
+            or (token.type == Token::Type::FileExpand and c.ends_with("/")))
+            continue;
+        c += to_string(token.terminator);
+    }
+
+    auto completions_flags = token.type == Token::Type::RegisterExpand
+                            ? Completions::Flags::None : Completions::Flags::Menu;
+    return { start, cursor_pos, candidates, completions_flags };
 }
 
 static Completions complete_expand(const Context& context,
@@ -780,7 +794,7 @@ Completions CommandManager::Completer::operator()(
     }
 
     if (is_last_token)
-        tokens.push_back({Token::Type::Raw, prefix.length(), {}});
+        tokens.push_back({Token::Type::Raw, prefix.length(), ""});
     kak_assert(not tokens.empty());
     const auto& token = tokens.back();
 

@@ -73,11 +73,11 @@ define-command -hidden make-jump %{
 }
 define-command -hidden make-select-next %{
         set-register / %opt{make_error_pattern}
-        execute-keys "%opt{jump_current_line}ggl" "/<ret>"
+        execute-keys "%opt{jump_current_line}g<a-l>" "/<ret>"
 }
 define-command -hidden make-select-previous %{
         set-register / %opt{make_error_pattern}
-        execute-keys "%opt{jump_current_line}g" "<a-/><ret>"
+        execute-keys "%opt{jump_current_line}g<a-h>" "<a-/><ret>"
 }
 
 define-command make-next-error -docstring %{alias for "jump-next *make*"} %{

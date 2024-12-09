@@ -92,7 +92,7 @@ while (<STDIN>) {
     $diff_line++;
     s/^(> )*//g;
     $diff_line_text = $_;
-    if (m{^commit (\w+)}) {
+    if (m{^(?:commit|Commit ID:) (\w+)}) {
         $commit = $1;
         next;
     }
@@ -119,7 +119,6 @@ while (<STDIN>) {
         $file_line = ($version eq "+" ? $2 : $1) - 1;
         $other_file_line = ($version eq "+" ? $1 : $2) - 1;
     } else {
-        my $iscontext = m{^[ ]};
         if (m{^[ $version]}) {
            $file_line++ if defined $file_line;
         }

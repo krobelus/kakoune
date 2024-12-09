@@ -49,6 +49,7 @@ struct {
         "» kak_* appearing in shell arguments will be added to the environment\n"
         "» {+U}double underline{} support\n"
         "» {+u}git apply{} can stage/revert selected changes to current buffer\n"
+        "» Jujutsu VCS integration\n"
     }, {
         20240518,
         "» Fix tests failing on some platforms\n"
@@ -997,7 +998,7 @@ int run_filter(StringView keystr, ConstArrayView<StringView> files, bool quiet, 
                 };
 
                 for (auto& key : keys)
-                    input_handler.handle_key(key, true);
+                    input_handler.handle_key(key);
             }
             catch (runtime_error& err)
             {

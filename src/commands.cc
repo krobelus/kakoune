@@ -2085,11 +2085,7 @@ void context_wrap(const ParametersParser& parser, Context& context, StringView d
         auto context_wrap_for_buffer = [&](Buffer& buffer) {
             InputHandler input_handler{{ buffer, Selection{} },
                                        Context::Flags::Draft};
-            Context& c = input_handler.context();
-
-            ScopedSetBool noninteractive(c.noninteractive());
-
-            func(parser, c);
+            func(parser, input_handler.context());
         };
         if (*bufnames == "*")
         {
@@ -2140,7 +2136,6 @@ void context_wrap(const ParametersParser& parser, Context& context, StringView d
 
     Context& c = *effective_context;
 
-    ScopedSetBool noninteractive(c.noninteractive());
     ScopedEdition edition{c};
     ScopedSelectionEdition selection_edition{c};
 
@@ -2223,7 +2218,7 @@ const CommandDesc execute_keys_cmd = {
             ScopedSetBool disable_hooks(context.hooks_disabled(), not parser.get_switch("with-hooks"));
 
             for (auto& key : parser | transform(parse_keys) | flatten())
-                context.input_handler().handle_key(key, true);
+                context.input_handler().handle_key(key);
         });
     }
 };
@@ -2320,8 +2315,6 @@ const CommandDesc prompt_cmd = {
                     sc.env_vars.erase("text"_sv);
                 });
 
-                ScopedSetBool noninteractive{context.noninteractive()};
-
                 StringView cmd;
                 switch (event)
                 {
@@ -2363,7 +2356,6 @@ const CommandDesc on_key_cmd = {
             parser.get_switch("mode-name").value_or("on-key"),
             KeymapMode::None, [=](Key key, Context& context) mutable {
             sc.env_vars["key"_sv] = to_string(key);
-            ScopedSetBool noninteractive{context.noninteractive()};
 
             CommandManager::instance().execute(command, context, sc);
         });
@@ -2687,16 +2679,15 @@ void enter_user_mode(Context& context, String mode_name, KeymapMode mode, bool l
         if (key == Key::Escape)
             return;
 
-        if (context.keymaps().is_mapped(key, mode))
+        if (context.keymaps_disabled() or not context.keymaps().is_mapped(key, mode))
         {
             ScopedSetBool disable_keymaps(context.keymaps_disabled());
-            ScopedSetBool noninteractive(context.noninteractive());
 
             InputHandler::ScopedForceNormal force_normal{context.input_handler(), {}};
 
             ScopedEdition edition(context);
             for (auto& key : context.keymaps().get_mapping_keys(key, mode))
-                context.input_handler().handle_key(key, true);
+                context.input_handler().handle_key(key);
         }
 
         if (lock)

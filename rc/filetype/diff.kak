@@ -22,8 +22,10 @@ add-highlighter shared/diff/ regex "^@@[^\n]*@@" 0:cyan,default
 add-highlighter shared/diff/ regex "^\+[^\n]*?(\h+)\n" 1:default,red
 
 define-command diff-jump -params .. -docstring %{
-        diff-jump [<switches>] [<directory>]: edit the diff's source file at the cursor position.
-        Paths are resolved relative to <directory>, or the current working directory if unspecified.
+        diff-jump [<switches>] [<directory>]: given the cursor is in a unified
+        diff, edit the corresponding source file at the corresponding position.
+
+        File paths are resolved relative to <directory>, or the current working directory if unspecified.
 
         Switches:
             -       jump to the old file instead of the new file

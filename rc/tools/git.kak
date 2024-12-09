@@ -144,9 +144,13 @@ define-command -params 1.. \
   git %{ evaluate-commands %sh{
     cd_bufdir() {
         dirname_buffer="${kak_buffile%/*}"
+        if [ "${dirname_buffer}" = "${kak_buffile}" ]; then
+            printf 'fail git: cannot operate on scratch buffer: %s\n' "${kak_buffile}"
+            return 1
+        fi
         cd "${dirname_buffer}" 2>/dev/null || {
-            printf 'fail Unable to change the current working directory to: %s\n' "${dirname_buffer}"
-            exit 1
+            printf 'fail git: unable to change the current working directory to: %s\n' "${dirname_buffer}"
+            return 1
         }
     }
     kakquote() {
@@ -191,13 +195,13 @@ define-command -params 1.. \
     }
 
     diff_buffer_against_rev() {
+        if ! command -v diff >/dev/null; then
+            echo >${kak_command_fifo} "fail diff: command not found"
+        fi
         rev=$1 # empty means index
         shift
         buffile_relative=${kak_buffile#"$(git rev-parse --show-toplevel)/"}
-        echo >${kak_command_fifo} "evaluate-commands -save-regs | %{
-            set-register | %{ cat >${kak_response_fifo} }
-            execute-keys -draft %{%<a-|><ret>}
-        }"
+        echo >${kak_command_fifo} "evaluate-commands -no-hooks write ${kak_response_fifo}"
         git show "$rev:${buffile_relative}" |
             diff - ${kak_response_fifo} "$@" |
             awk -v buffile_relative="$buffile_relative" '
@@ -222,14 +226,17 @@ define-command -params 1.. \
             printf >${kak_command_fifo} %s '
                 evaluate-commands -client '${kak_client}' -draft %{
                     try %{
-                        execute-keys <a-l><semicolon><a-?>^commit<ret><a-semicolon>
+                        execute-keys <a-l><semicolon><a-?>^(?:commit|Commit ID:)<ret><a-semicolon>
                     } catch %{
                         # Missing commit line, assume it is an uncommitted change.
                         execute-keys <a-l><semicolon>Gg<a-semicolon>
                     }
                     require-module diff
                     try %{
-                        diff-parse END %{
+                        diff-parse BEGIN %{
+                            $directory = qx(git rev-parse --show-toplevel);
+                            chomp $directory;
+                        } END %{
                             my $filename = $other_file;
                             my $line = $other_file_line;
                             if (not defined $commit) {
@@ -246,8 +253,10 @@ define-command -params 1.. \
                                 $line = $file_line;
                             }
                             $line = $line or 1;
-                            printf "echo -to-file '${kak_response_fifo}' -quoting shell %s %s %d %d",
-                                $commit, quote($filename), $line, ('${kak_cursor_column}' - 1);
+                            my $filename_relative = substr($filename, length "$directory/");
+                            printf "echo -to-file '${kak_response_fifo}' -quoting shell %s %s %s %d %d",
+                               $commit, quote($filename), quote($filename_relative),
+                               $line, ('${kak_cursor_column}' - 1);
                         }
                     } catch %{
                         echo -to-file '${kak_response_fifo}' -quoting shell -- %val{error}
@@ -261,49 +270,47 @@ define-command -params 1.. \
                 exit
             fi
             commit=$1
-            file=${2#"$PWD/"}
-            cursor_line=$3
-            cursor_column=$4
-            shift 4
+            file_absolute=$2
+            file_relative=$3
+            cursor_line=$4
+            cursor_column=$5
+            shift 5
             # Log commit and file name because they are only echoed briefly
             # and not shown elsewhere (we don't have a :messages buffer).
-            message="Blaming $file as of $(git rev-parse --short $commit)"
+            message="Blaming $file_relative as of $(git rev-parse --short $commit)"
             echo "echo -debug -- $(kakquote "$message")"
             on_close_fifo="
                 execute-keys -client ${kak_client} ${cursor_line}g<a-h>${cursor_column}lh
                 evaluate-commands -client ${kak_client} %{
-                    set-option buffer git_blob $(kakquote "$commit:$file")
+                    set-option buffer git_blob $(kakquote "$commit:$file_absolute")
                     git blame $(for arg; do kakquote "$arg"; printf " "; done)
-                    hook -once window NormalIdle .* %{
-                        execute-keys vv
-                        echo -markup -- $(kakquote "{Information}{\\}$message. Press <ret> to jump to blamed commit")
-                    }
+                    echo -markup -- $(kakquote "{Information}{\\}$message. Press <ret> to jump to blamed commit")
+                    hook -once window NormalIdle .* %{ execute-keys vv }
                 }
-            " show_git_cmd_output show "$commit:$file"
+            " show_git_cmd_output show "$commit:$file_relative"
             exit
         } fi
         if [ -n "${kak_opt_git_blob}" ]; then {
             set -- "$@" "${kak_opt_git_blob%%:*}" -- "${kak_opt_git_blob#*:}"
             blame_stdin=/dev/null
         } else {
+            if ! error=$(cd_bufdir); then
+                echo 'remove-highlighter window/git-blame'
+                printf %s\\n "$error"
+                exit
+            fi
             set -- "$@" --contents - -- "${kak_buffile}" # use stdin to work around git bug
             blame_stdin=$(mktemp "${TMPDIR:-/tmp}"/kak-git.XXXXXX)
-            echo >${kak_command_fifo} "evaluate-commands -save-regs | %{
-                set-register | %{
-                    cat >${blame_stdin}
-                    : >${kak_response_fifo}
-                }
-                execute-keys -client ${kak_client} -draft %{%<a-|><ret>}
-            }"
+            echo >${kak_command_fifo} "
+                evaluate-commands -no-hooks write -force ${blame_stdin}
+                echo -to-file ${kak_response_fifo}
+            "
             : <${kak_response_fifo}
         } fi
         echo 'map window normal <ret> %{:git blame-jump<ret>}'
         echo 'echo -markup {Information}Press <ret> to jump to blamed commit'
         (
             trap - INT QUIT
-            if [ -z "${kak_opt_git_blob}" ]; then
-                cd_bufdir
-            fi
             printf %s "evaluate-commands -client '$kak_client' %{
                       set-option buffer=$kak_bufname git_blame_flags '$kak_timestamp'
                       set-option buffer=$kak_bufname git_blame_index '$kak_timestamp'
@@ -377,9 +384,7 @@ define-command -params 1.. \
                     echo -debug failed to run git blame
                     echo -debug git stderr: <<<
                     echo -debug ''$(escape2 "$stderr")>>>''
-                    hook -once buffer NormalIdle .* %{
-                        echo -markup %{{Error}failed to run git blame, see *debug* buffer}
-                    }
+                    echo -markup %{{Error}failed to run git blame, see *debug* buffer}
                 '" | kak -p ${kak_session}
             fi
             if [ ${blame_stdin} != /dev/null ]; then
@@ -398,7 +403,7 @@ define-command -params 1.. \
 
     update_diff() {
         (
-            cd_bufdir
+            cd_bufdir || exit
             diff_buffer_against_rev "" -U0 | perl -e '
             use utf8;
             $flags = $ENV{"kak_timestamp"};
@@ -546,6 +551,10 @@ define-command -params 1.. \
     }
 
     blame_jump() {
+        if [ -z "${kak_client}" ]; then
+            echo fail git blame-jump: no client in context
+            exit
+        fi
         echo >${kak_command_fifo} "echo -to-file ${kak_response_fifo} -- %opt{git_blame}"
         blame_info=$(cat < ${kak_response_fifo})
         blame_index=
@@ -561,7 +570,7 @@ define-command -params 1.. \
             printf >${kak_command_fifo} %s '
                 evaluate-commands -draft %{
                     try %{
-                        execute-keys <a-l><semicolon><a-?>^commit<ret><a-semicolon>
+                        execute-keys <a-l><semicolon><a-?>^(?:commit|Commit ID:)<ret><a-semicolon>
                     } catch %{
                         # Missing commit line, assume it is an uncommitted change.
                         execute-keys <a-l><semicolon><a-?>\A<ret><a-semicolon>
@@ -570,6 +579,8 @@ define-command -params 1.. \
                     try %{
                         diff-parse BEGIN %{
                             $version = "-";
+                            $directory = qx(git rev-parse --show-toplevel);
+                            chomp $directory;
                         } END %{
                             if ($diff_line_text !~ m{^[ -]}) {
                                 print quote "git blame-jump: recursive blame only works on context or deleted lines";
@@ -609,10 +620,7 @@ define-command -params 1.. \
             } else {
                 set -- --contents - -- "${kak_buffile}" # use stdin to work around git bug
                 blame_stdin=${kak_response_fifo}
-                echo >${kak_command_fifo} "evaluate-commands -save-regs | %{
-                    set-register | %{ cat >${kak_response_fifo} }
-                    execute-keys -client ${kak_client} -draft %{%<a-|><ret>}
-                }"
+                echo >${kak_command_fifo} "evaluate-commands -no-hooks write ${kak_response_fifo}"
             } fi
             if ! blame_info=$(
                 git blame --porcelain -L"$cursor_line,$cursor_line" "$@" <${blame_stdin})
@@ -735,11 +743,9 @@ define-command -params 1.. \
                         } END $SQ$SQ
                             print \"execute-keys -client $ENV{client} \${diff_line}g<a-h>$ENV{cursor_column}l;\";
                             printf \"evaluate-commands -client $ENV{client} $SQ$SQ$SQ$SQ
-                                hook -once window NormalIdle .* $SQ$SQ$SQ$SQ$SQ$SQ$SQ$SQ
-                                    execute-keys vv
-                                    echo -markup -- %s
-                                $SQ$SQ$SQ$SQ$SQ$SQ$SQ$SQ
-                            $SQ$SQ$SQ$SQ ;\"," . escape(escape(perlquote(escape(escape(quote($info)))))) . ";
+                                echo -markup -- %s
+                                hook -once window NormalIdle .* %%{ execute-keys vv }
+                            $SQ$SQ$SQ$SQ ;\"," . escape(escape(perlquote(escape(quote($info))))) . ";
                         $SQ$SQ
                     $SQ
                 ";
@@ -750,7 +756,7 @@ define-command -params 1.. \
     }
 
     apply_selections() {
-        if [ -z "$(cd_bufdir >/dev/null 2>&1; git ls-files -- ":(literal)${kak_buffile}")" ]; then {
+        if [ -z "$(cd_bufdir >/dev/null 2>&1 && git ls-files -- ":(literal)${kak_buffile}")" ]; then {
             enquoted="$(printf '"%s" ' "$@")"
             echo "require-module patch"
             echo "patch git apply $enquoted"
@@ -771,7 +777,7 @@ define-command -params 1.. \
             echo "fail %{git apply on buffer contents doesn't make sense without --reverse or --cached}"
             exit
         fi
-        cd_bufdir
+        cd_bufdir || exit
         num_inserted=0
         num_deleted=0
         for selection_desc in $kak_selections_desc; do {
@@ -856,6 +862,8 @@ define-command -params 1.. \
         esac
         echo "echo -markup '{Information}{\\}$msg'"
     }
+
+    on_close_fifo=
 
     case "$1" in
         apply)

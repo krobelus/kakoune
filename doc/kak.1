@@ -251,13 +251,18 @@ files will not be.
 .
 .Pp
 Users who still want the built-in scripts to be loaded along their own
-can create a symbolic link to
-.Pa <rtdir>/autoload
-.Pq or to individual scripts in it
-in their user-configuration directory:
-.
+can add this snippet to either
+.Pa $KAKOUNE_CONFIG_DIR/kakrc
+or a
+.Pa *.kak
+file in the
+.Pa $KAKOUNE_CONFIG_DIR/autoload
+directory:
 .Pp
-.Dl ln -s \fI<rtdir>\fR/autoload "${XDG_CONFIG_HOME:-$HOME/.config}"/kak/autoload
+    evaluate-commands %sh{
+        find "${kak_runtime}"/autoload/ -type f -name '*.kak' |
+            sed 's/.*/try %{ source "&" } catch %{ echo -debug could not autoload "&" }/'
+    }
 .
 .Sh EXAMPLES
 .Bl -tag -width 6n
