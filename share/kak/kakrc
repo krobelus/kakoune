@@ -27,18 +27,15 @@ def -params 1 -docstring "colorscheme <name>: enable named colorscheme" \
 }}
 
 evaluate-commands %sh{
-    autoload_directory() {
-        find -L "$1" -type f -name '*\.kak' \
-            | sed 's/.*/try %{ source "&" } catch %{ echo -debug Autoload: could not load "&" }/'
-    }
-
     echo "colorscheme default"
 
-    if [ -d "${kak_config}/autoload" ]; then
-        autoload_directory ${kak_config}/autoload
-    elif [ -d "${kak_runtime}/autoload" ]; then
-        autoload_directory ${kak_runtime}/autoload
-    fi
+    {
+        find -H "${kak_runtime}/autoload" -type f -name '*.kak'
+        if [ -d "${kak_config}/autoload" ]; then
+            find -L "${kak_config}/autoload" -type f -name '*.kak' | xargs realpath |
+                grep -v "^$(realpath "${kak_runtime}/autoload" | sed 's/[.^$*\[\\]/\\&/g')" # Skip obsolete links into runtime autoload.
+        fi
+    } | sed 's/.*/try %{ source "&" } catch %{ echo -debug Autoload: could not load "&" }/'
 
     if [ -f "${kak_runtime}/kakrc.local" ]; then
         echo "source '${kak_runtime}/kakrc.local'"
