@@ -2074,8 +2074,11 @@ void exec_user_mappings(Context& context, NormalParams params)
 {
     on_next_key_with_autoinfo(context, "user-mapping", KeymapMode::None,
                              [params](Key key, Context& context) mutable {
-        if (not context.keymaps().is_mapped(key, KeymapMode::User))
+        if (context.keymaps_disabled()
+            or not context.keymaps().is_mapped(key, KeymapMode::User))
+        {
             return;
+        }
 
         ScopedSetBool disable_keymaps(context.keymaps_disabled());
         ScopedSetBool noninteractive(context.noninteractive());

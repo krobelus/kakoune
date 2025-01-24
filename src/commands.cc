@@ -2687,7 +2687,7 @@ void enter_user_mode(Context& context, String mode_name, KeymapMode mode, bool l
         if (key == Key::Escape)
             return;
 
-        if (context.keymaps().is_mapped(key, mode))
+        if (context.keymaps_disabled() or not context.keymaps().is_mapped(key, mode))
         {
             ScopedSetBool disable_keymaps(context.keymaps_disabled());
             ScopedSetBool noninteractive(context.noninteractive());
