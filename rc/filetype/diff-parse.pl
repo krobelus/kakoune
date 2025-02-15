@@ -92,7 +92,7 @@ while (<STDIN>) {
     $diff_line++;
     s/^(> )*//g;
     $diff_line_text = $_;
-    if (m{^commit (\w+)}) {
+    if (m{^(?:commit|Commit ID:) (\w+)}) {
         $commit = $1;
         next;
     }
