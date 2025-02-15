@@ -222,7 +222,7 @@ define-command -params 1.. \
             printf >${kak_command_fifo} %s '
                 evaluate-commands -client '${kak_client}' -draft %{
                     try %{
-                        execute-keys <a-l><semicolon><a-?>^commit<ret><a-semicolon>
+                        execute-keys <a-l><semicolon><a-?>^(?:commit|Commit ID:)<ret><a-semicolon>
                     } catch %{
                         # Missing commit line, assume it is an uncommitted change.
                         execute-keys <a-l><semicolon>Gg<a-semicolon>
@@ -559,7 +559,7 @@ define-command -params 1.. \
             printf >${kak_command_fifo} %s '
                 evaluate-commands -draft %{
                     try %{
-                        execute-keys <a-l><semicolon><a-?>^commit<ret><a-semicolon>
+                        execute-keys <a-l><semicolon><a-?>^(?:commit|Commit ID:)<ret><a-semicolon>
                     } catch %{
                         # Missing commit line, assume it is an uncommitted change.
                         execute-keys <a-l><semicolon><a-?>\A<ret><a-semicolon>
