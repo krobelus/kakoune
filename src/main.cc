@@ -64,6 +64,7 @@ struct {
         "» {+U}double underline{} support\n"
         "» {+u}git apply{} can stage/revert selected changes to current buffer\n"
         "» {+u}exec/eval -client{} accepts '*' and comma separated list\n"
+        "» Jujutsu VCS integration\n"
     }, {
         20240518,
         "» Fix tests failing on some platforms\n"

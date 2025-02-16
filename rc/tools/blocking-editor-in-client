@@ -1,0 +1,45 @@
+#!/bin/sh
+
+kakquote() {
+    printf "%s" "$1" | sed "s/'/''/g; 1s/^/'/; \$s/\$/'/"
+}
+
+session=$1
+client=$2
+shift 2
+
+if [ "$1" = -- ]; then
+    shift
+fi
+
+line_and_maybe_column=
+if printf %s "$1" | grep -q ^+; then
+    line_and_maybe_column=$(printf %s "$1" | sed -e s,^+,, -e "s,:, ,")
+    shift
+fi
+
+if [ $# -ne 1 ]; then
+    echo >&2 "$0: error: expected exactly one file argument"
+    exit 1
+fi
+filename=$1
+
+fifo=$(mktemp -d "${TMPDIR:-/tmp}"/kak-blocking-editor-in-client.XXXXXXXX)/fifo
+mkfifo $fifo
+
+cmd="
+    edit -- $(realpath "$filename") $line_and_maybe_column
+    hook buffer BufWritePost .* %{
+        remove-hooks buffer blocking-editor-in-client
+        delete-buffer
+        echo -to-file $fifo 0
+    }
+    hook -group blocking-editor-in-client buffer BufClose .* %{
+        echo -to-file $fifo 1
+    }
+"
+printf %s "evaluate-commands -client $client $(kakquote "$cmd")" | kak -p "$session"
+
+read status <$fifo
+rm -r $(dirname $fifo)
+exit $status

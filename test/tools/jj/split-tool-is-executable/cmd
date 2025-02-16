@@ -1,0 +1,1 @@
+<a-!>[ -x ${kak_runtime}/rc/tools/jj-split-tool ] && echo executable<ret>

@@ -188,6 +188,7 @@ install: src/kak installdirs install-debug-$(debug) install-gzip-man-$(gzip_man)
 
 	cp -r rc/* $(sharedir)/rc
 	find $(sharedir)/rc -type f -exec chmod 0644 {} +
+	chmod 0755 $(sharedir)/rc/tools/jj-split-tool
 	[ -e $(sharedir)/autoload ] || ln -s rc $(sharedir)/autoload
 
 	cp colors/* $(sharedir)/colors
