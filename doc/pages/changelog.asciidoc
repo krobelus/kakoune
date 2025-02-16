@@ -9,6 +9,7 @@ released versions.
 * Support for colored double underlines
 * `git apply` can now operate on selected changes in the current buffer's
   file (useful for quick (un)staging and reverting)
+* Jujutsu VCS integration
 
 == Kakoune 2024.05.18
 
