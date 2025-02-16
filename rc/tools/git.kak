@@ -216,7 +216,7 @@ define-command -params 1.. \
         }"
         eval $(cat ${kak_response_fifo})
         if [ -z "${kak_opt_git_blob}" ] && {
-            [ "${kak_opt_filetype}" = git-diff ] || [ "${kak_opt_filetype}" = git-log ]
+            case "${kak_opt_filetype}" in (git-diff | jj-diff | git-log) true ;; (*) false; esac
         } then {
             echo 'try %{ remove-highlighter window/git-blame }'
             printf >${kak_command_fifo} %s '
@@ -557,7 +557,7 @@ define-command -params 1.. \
                 echo -to-file ${kak_response_fifo} -- %opt{git_blame_index}
             "
             blame_index=$(cat < ${kak_response_fifo})
-        } elif [ "${kak_opt_filetype}" = git-diff ] || [ "${kak_opt_filetype}" = git-log ]; then {
+        } elif case "${kak_opt_filetype}" in (git-diff | jj-diff | git-log) true ;; (*) false; esac; then {
             printf >${kak_command_fifo} %s '
                 evaluate-commands -draft %{
                     try %{
