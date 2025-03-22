@@ -26,6 +26,8 @@ def -params 1 -docstring "colorscheme <name>: enable named colorscheme" \
     fi
 }}
 
+declare-option str kak_no_autoload nop
+
 evaluate-commands %sh{
     echo "colorscheme default"
 
