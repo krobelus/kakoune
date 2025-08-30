@@ -168,7 +168,7 @@ private:
 
     Codepoint m_padding_char = '~';
     bool m_padding_fill = false;
-    bool m_cursor_native = false;
+    Optional<StringView> m_cursor_native;
 
     bool m_dirty = false;
 

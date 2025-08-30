@@ -386,8 +386,12 @@ are exclusively available to built-in options.
             no limit.
 
         *terminal_cursor_native*:::
-            if *yes* or *true*, use native terminal cursor visibility control
-            instead of Kakoune's cursor management (defaults to *false*)
+            if set, make the terminal cursor visible, on top of Kakoune's cursor.
+            Can be set to *inherit* (don't change the shape),
+            *default* (reset to the default shape),
+            *blinking-block*, *steady-block*,
+            *blinking-underline*, *steady-underline*,
+            *blinking-bar* or *steady-bar*.
 
 [[startup-info]]
 *startup_info_version* `int`::

@@ -1580,12 +1580,29 @@ void TerminalUI::set_ui_options(const Options& options)
 
     m_padding_char = find("terminal_padding_char").map([](StringView s) { return s.column_length() < 1 ? ' ' : s[0_char]; }).value_or(Codepoint{'~'});
     m_padding_fill = find("terminal_padding_fill").map(to_bool).value_or(false);
-    
-    bool new_cursor_native = find("terminal_cursor_native").map(to_bool).value_or(false);
+
+    Optional<StringView> new_cursor_native = find("terminal_cursor_native").map([](auto s) -> StringView {
+        if (s == "default")
+            return "\033[0 q";
+        if (s == "blinking-block")
+            return "\033[1 q";
+        if (s == "steady-block")
+            return "\033[2 q";
+        if (s == "blinking-underline")
+            return "\033[3 q";
+        if (s == "steady-underline")
+            return "\033[4 q";
+        if (s == "blinking-bar")
+            return "\033[5 q";
+        if (s == "steady-bar")
+            return "\033[6 q";
+        return ""; // inherit
+    });
     if (new_cursor_native != m_cursor_native)
     {
         m_cursor_native = new_cursor_native;
         write(STDOUT_FILENO, m_cursor_native ? "\033[?25h" : "\033[?25l");
+        write(STDOUT_FILENO, m_cursor_native.value_or(""));
     }
 
     m_info_max_width = find("terminal_info_max_width").map(str_to_int_ifp).value_or(0);

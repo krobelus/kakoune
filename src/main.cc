@@ -520,7 +520,7 @@ void register_options()
                        "    terminal_shift_function_key    int\n"
                        "    terminal_padding_char          codepoint\n"
                        "    terminal_padding_fill          bool\n"
-                       "    terminal_cursor_native         bool\n"
+                       "    terminal_cursor_native         inherit|default|blinking-block|steady-block|blinking-underline|steady-underline|blinking-bar|steady-bar\n"
                        "    terminal_info_max_width        int\n",
                        UserInterface::Options{});
     reg.declare_option("modelinefmt", "format string used to generate the modeline",
