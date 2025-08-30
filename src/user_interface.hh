@@ -2,8 +2,12 @@
 #define user_interface_hh_INCLUDED
 
 #include "array_view.hh"
+#include "coord.hh"
+#include "optional.hh"
 #include "hash_map.hh"
 #include "function.hh"
+
+#include <variant>
 
 namespace Kakoune
 {
@@ -35,11 +39,22 @@ enum class InfoStyle
 
 enum class EventMode;
 
-enum class CursorMode
+namespace CursorLocations
 {
-    Prompt,
-    Buffer,
+
+struct Prompt
+{
+    DisplayCoord m_cursor;
 };
+
+struct Buffer
+{
+    Vector<DisplayCoord> m_cursors;
+    DisplayCoord m_main;
+};
+
+}
+using Cursors = std::variant<CursorLocations::Prompt, CursorLocations::Buffer>;
 
 using OnKeyCallback = Function<void(Key key)>;
 using OnPasteCallback = Function<void(StringView content)>;
@@ -73,7 +88,7 @@ public:
 
     virtual DisplayCoord dimensions() = 0;
 
-    virtual void set_cursor(CursorMode mode, DisplayCoord coord) = 0;
+    virtual void set_cursors(Cursors&& cursors) = 0;
 
     virtual void refresh(bool force) = 0;
 

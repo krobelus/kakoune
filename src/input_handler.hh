@@ -15,6 +15,7 @@
 #include "safe_ptr.hh"
 #include "display_buffer.hh"
 #include "event_manager.hh"
+#include "user_interface.hh"
 
 namespace Kakoune
 {
@@ -40,7 +41,6 @@ using KeyCallback = Function<void (Key, Context&)>;
 
 class InputMode;
 enum class KeymapMode : char;
-enum class CursorMode;
 
 using PromptCompleter = Function<Completions (const Context&, StringView, ByteCount)>;
 enum class InsertMode : unsigned
@@ -107,7 +107,7 @@ public:
 
     ModeInfo mode_info() const;
 
-    std::pair<CursorMode, DisplayCoord> get_cursor_info() const;
+    Cursors get_cursors_info() const;
 
     // Force an input handler into normal mode temporarily
     struct ScopedForceNormal

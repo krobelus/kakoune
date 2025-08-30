@@ -9,6 +9,7 @@
 #include "ranges.hh"
 #include "string_utils.hh"
 #include "format.hh"
+#include "user_interface.hh"
 
 #include <cstdio>
 #include <utility>
@@ -104,14 +105,29 @@ String to_json(InfoStyle style)
     return "";
 }
 
-String to_json(CursorMode mode)
+String to_json(const CursorLocations::Prompt& cursor)
 {
-    switch (mode)
+    return to_json(cursor.m_cursor);
+}
+
+String to_json(const CursorLocations::Buffer& cursors)
+{
+    return format(R"(\{ "cursors": {}, "main": "" })",
+                  to_json(cursors.m_cursors), to_json(cursors.m_main));
+}
+
+String to_json(const Cursors& cursors)
+{
+    struct
     {
-        case CursorMode::Prompt: return R"("prompt")";
-        case CursorMode::Buffer: return R"("buffer")";
-    }
-    return "";
+        String operator()(const CursorLocations::Prompt& val) {
+            return format(R"(\{ "prompt": {} })", to_json(val));
+        };
+        String operator()(const CursorLocations::Buffer& val) {
+            return format(R"(\{ "buffer": {} })", to_json(val));
+        };
+    } to_json;
+    return std::visit(to_json, cursors);
 }
 
 String concat()
@@ -188,9 +204,9 @@ void JsonUI::info_hide()
     rpc_call("info_hide");
 }
 
-void JsonUI::set_cursor(CursorMode mode, DisplayCoord coord)
+void JsonUI::set_cursors(Cursors&& cursors)
 {
-    rpc_call("set_cursor", mode, coord);
+    rpc_call("set_cursors", cursors);
 }
 
 void JsonUI::refresh(bool force)

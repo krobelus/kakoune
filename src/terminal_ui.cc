@@ -1,5 +1,7 @@
 #include "terminal_ui.hh"
 
+#include "array_view.hh"
+#include "coord.hh"
 #include "display_buffer.hh"
 #include "event_manager.hh"
 #include "exception.hh"
@@ -9,6 +11,7 @@
 #include "format.hh"
 #include "diff.hh"
 #include "string_utils.hh"
+#include "user_interface.hh"
 
 #include <algorithm>
 
@@ -17,6 +20,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <strings.h>
+#include <variant>
 
 namespace Kakoune
 {
@@ -438,7 +442,7 @@ static void signal_handler(int)
 }
 
 TerminalUI::TerminalUI()
-    : m_cursor{CursorMode::Buffer, {}},
+    : m_cursors{CursorLocations::Buffer{{}, {}}},
       m_stdin_watcher{STDIN_FILENO, FdEvents::Read, EventMode::Urgent,
                       [this](FDWatcher&, FdEvents, EventMode) {
         if (not m_on_key)
@@ -529,6 +533,9 @@ void TerminalUI::set_raw_mode() const
     tcsetattr(STDIN_FILENO, TCSANOW, &attr);
 }
 
+template <typename... Types>
+struct Overloaded : Types... { using Types::operator()...; };
+
 void TerminalUI::redraw(bool force)
 {
     m_window.blit(m_screen);
@@ -541,18 +548,38 @@ void TerminalUI::redraw(bool force)
     Writer writer{STDOUT_FILENO};
     m_screen.output(force, (bool)m_synchronized, writer);
 
+    writer.write("\033[>0;4 q");
+
     auto set_cursor_pos = [&](DisplayCoord c) {
         format_with(writer, "\033[{};{}H", (int)c.line + 1, (int)c.column + 1);
     };
-    if (m_cursor.mode == CursorMode::Prompt)
-        set_cursor_pos({m_status_on_top ? 0 : m_dimensions.line, m_cursor.coord.column});
-    else
-        set_cursor_pos(m_cursor.coord + content_line_offset());
+
+    std::visit(Overloaded{
+        [&](const CursorLocations::Prompt& p) {
+            set_cursor_pos({m_status_on_top ? 0 : m_dimensions.line, p.m_cursor.column});
+        },
+        [&](const CursorLocations::Buffer& cursors) {
+            if (cursors.m_cursors.empty())
+                return;
+            LineCount line_offset = content_line_offset();
+            set_cursor_pos(cursors.m_main + line_offset);
+
+            // Workaround for https://codeberg.org/dnkl/foot/pulls/2169/files#issuecomment-6817741
+            if (not m_cursor_native)
+                return;
+
+            for (DisplayCoord c : cursors.m_cursors)
+            {
+                c += line_offset;
+                format_with(writer, "\033[>29;2:{}:{} q", (int)c.line + 1, (int)c.column + 1);
+            }
+        },
+    }, m_cursors);
 }
 
-void TerminalUI::set_cursor(CursorMode mode, DisplayCoord coord)
+void TerminalUI::set_cursors(Cursors&& cursors)
 {
-    m_cursor = Cursor{mode, coord};
+    m_cursors = std::move(cursors);
 }
 
 void TerminalUI::refresh(bool force)

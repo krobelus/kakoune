@@ -1,6 +1,7 @@
 #include "input_handler.hh"
 
 #include "buffer.hh"
+#include "coord.hh"
 #include "debug.hh"
 #include "command_manager.hh"
 #include "client.hh"
@@ -9,8 +10,11 @@
 #include "insert_completer.hh"
 #include "normal.hh"
 #include "option_types.hh"
+#include "optional.hh"
+#include "ranges.hh"
 #include "regex.hh"
 #include "register_manager.hh"
+#include "selection.hh"
 #include "user_interface.hh"
 #include "window.hh"
 #include "word_db.hh"
@@ -48,11 +52,18 @@ public:
 
     virtual StringView name() const = 0;
 
-    virtual std::pair<CursorMode, DisplayCoord> get_cursor_info() const
+    virtual Cursors get_cursors_info() const
     {
-        const auto cursor = context().selections().main().cursor();
-        auto coord = context().window().display_coord(cursor).value_or(DisplayCoord{});
-        return {CursorMode::Buffer, coord};
+        const auto main_cursor = context().selections().main().cursor();
+        return CursorLocations::Buffer{
+            context().selections()
+                | transform([&](const Selection& sel) {
+                    return context().window().display_coord(sel.cursor()); } )
+                | filter([&](const Optional<DisplayCoord>& coord) { return (bool)coord; })
+                | transform([](auto coord) { return *coord; })
+                | gather<Vector>(),
+            context().window().display_coord(main_cursor).value_or(DisplayCoord{})
+        };
     }
 
     using Insertion = InputHandler::Insertion;
@@ -988,10 +999,10 @@ public:
 
     StringView name() const override { return "prompt"; }
 
-    std::pair<CursorMode, DisplayCoord> get_cursor_info() const override
+    Cursors get_cursors_info() const override
     {
         DisplayCoord coord{0_line, m_prompt.column_length() + m_line_editor.cursor_display_column()};
-        return { CursorMode::Prompt, coord };
+        return CursorLocations::Prompt{ coord };
     }
 
 private:
@@ -1775,9 +1786,9 @@ ModeInfo InputHandler::mode_info() const
     return current_mode().mode_info();
 }
 
-std::pair<CursorMode, DisplayCoord> InputHandler::get_cursor_info() const
+Cursors InputHandler::get_cursors_info() const
 {
-    return current_mode().get_cursor_info();
+    return current_mode().get_cursors_info();
 }
 
 bool should_show_info(AutoInfo mask, const Context& context)

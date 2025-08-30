@@ -1,6 +1,7 @@
 #include "remote.hh"
 
 #include "buffer_utils.hh"
+#include "coord.hh"
 #include "debug.hh"
 #include "client_manager.hh"
 #include "command_manager.hh"
@@ -10,6 +11,7 @@
 #include "hash_map.hh"
 #include "optional.hh"
 #include "user_interface.hh"
+#include "vector.hh"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -21,6 +23,8 @@
 #include <pwd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <utility>
+#include <variant>
 
 
 namespace Kakoune
@@ -38,7 +42,7 @@ enum class MessageType : uint8_t
     InfoHide,
     Draw,
     DrawStatus,
-    SetCursor,
+    SetCursors,
     Refresh,
     SetOptions,
     Exit,
@@ -106,6 +110,12 @@ private:
         write_field(ConstArrayView<T>(vec));
     }
 
+    template<typename T, MemoryDomain domain>
+    void write_field_v(const Vector<T, domain>& vec)
+    {
+        write_field(ConstArrayView<T>(vec));
+    }
+
     template<typename Key, typename Val, MemoryDomain domain>
     void write_field(const HashMap<Key, Val, domain>& map)
     {
@@ -123,6 +133,15 @@ private:
         write_field((bool)val);
         if (val)
             write_field(*val);
+    }
+
+    template<typename... Alternatives>
+    void write_field(const std::variant<Alternatives...>& val)
+    {
+        write_field(val.index());
+        std::visit([this](const auto& alternative) {
+            write_field(alternative);
+        }, val);
     }
 
     void write_field(Color color)
@@ -150,6 +169,12 @@ private:
     void write_field(const DisplayBuffer& display_buffer)
     {
         write_field(display_buffer.lines());
+    }
+
+    void write_field(const CursorLocations::Buffer& cursors)
+    {
+        write_field(cursors.m_cursors);
+        write_field(cursors.m_main);
     }
 
 private:
@@ -211,6 +236,25 @@ private:
             if (not Reader<bool>::read(reader))
                 return {};
             return Reader<T>::read(reader);
+        }
+    };
+
+    template<typename Result, typename Alternative>
+    static void read_variant(Result& result, MsgReader& reader, size_t index)
+    {
+        if (index == 0)
+            result = Reader<Alternative>::read(reader);
+    }
+
+    template<typename... Alternatives>
+    struct Reader<std::variant<Alternatives...>> {
+        static std::variant<Alternatives...> read(MsgReader& reader)
+        {
+            size_t index = Reader<size_t>::read(reader);
+            using Result = std::variant<Alternatives...>;
+            Result result;
+            (read_variant<Result, Alternatives>(result, reader, index--), ...);
+            return std::move(result);
         }
     };
 
@@ -378,6 +422,14 @@ struct MsgReader::Reader<DisplayBuffer> {
     }
 };
 
+template<>
+struct MsgReader::Reader<CursorLocations::Buffer> {
+    static CursorLocations::Buffer read(MsgReader& reader)
+    {
+        auto cursors = Reader<Vector<DisplayCoord>>::read(reader);
+        return {std::move(cursors), Reader<DisplayCoord>::read(reader)};
+    }
+};
 
 class RemoteUI : public UserInterface
 {
@@ -405,7 +457,7 @@ public:
                      const DisplayLine& mode_line,
                      const Face& default_face) override;
 
-    void set_cursor(CursorMode mode, DisplayCoord coord) override;
+    void set_cursors(Cursors&& cursors) override;
 
     void refresh(bool force) override;
 
@@ -575,9 +627,9 @@ void RemoteUI::draw_status(const DisplayLine& status_line,
     send_message(MessageType::DrawStatus, status_line, mode_line, default_face);
 }
 
-void RemoteUI::set_cursor(CursorMode mode, DisplayCoord coord)
+void RemoteUI::set_cursors(Cursors&& cursors)
 {
-    send_message(MessageType::SetCursor, mode, coord);
+    send_message(MessageType::SetCursors, cursors);
 }
 
 void RemoteUI::refresh(bool force)
@@ -728,8 +780,8 @@ RemoteClient::RemoteClient(StringView session, StringView name, UniquePtr<UserIn
             case MessageType::DrawStatus:
                 exec(&UserInterface::draw_status);
                 break;
-            case MessageType::SetCursor:
-                exec(&UserInterface::set_cursor);
+            case MessageType::SetCursors:
+                exec(&UserInterface::set_cursors);
                 break;
             case MessageType::Refresh:
                 exec(&UserInterface::refresh);
